@@ -16,7 +16,10 @@ const SMETA = {
   SKIP:       {c:'#64748b', label:'Skipped',        short:'SKIP',   desc:'Intentionally skipped — this configuration is unsupported for the op.'},
   NOT_IN_TTNN:{c:'#475569', label:'Not in TTNN',    short:'N/A',    desc:'The operation is not implemented in TTNN.'},
 };
-const ORDER = ['PASS','PCC_FAIL','ERROR','NO_GOLDEN','SKIP','NOT_IN_TTNN'];
+// Canonical order; drop any status with zero configs in the current dataset so
+// empty categories don't show up anywhere (donut, legend, chips, snapshot, table).
+const ALL_ORDER = ['PASS','PCC_FAIL','ERROR','NO_GOLDEN','SKIP','NOT_IN_TTNN'];
+const ORDER = ALL_ORDER.filter(s => (D.statusCounts[s]||0) > 0);
 
 /* ---- tooltip ---- */
 const tip = $('#tip');
@@ -59,7 +62,7 @@ function renderMeta(){
     {cls:'k-pcc',   lab:'PCC Failures', ico:'wave', val:fmt(sc.PCC_FAIL),
       meta:'ran but inaccurate', color:'#f59e0b'},
     {cls:'k-nogold',lab:'No Golden', ico:'eye', val:fmt(sc.NO_GOLDEN),
-      meta:'unverifiable output', color:'#38bdf8'},
+      meta:'unverifiable output', color:'#38bdf8', skipIfZero:sc.NO_GOLDEN},
     {cls:'k-ops',   lab:'Operations', ico:'grid', val:fmt(m.ops),
       meta:`${fmt(runnable)} runnable configs`, color:'#3b82f6'},
     {cls:'k-total', lab:'Total Configs', ico:'layers', val:fmt(m.total),
@@ -73,7 +76,11 @@ function renderMeta(){
     grid:'<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>',
     layers:'<path d="m12 2 9 5-9 5-9-5 9-5Z"/><path d="m3 12 9 5 9-5M3 17l9 5 9-5"/>'
   };
-  $('#kpis').innerHTML = cards.map(c=>`
+  // drop cards explicitly flagged skipIfZero===0 (e.g. No-Golden when absent)
+  const shown = cards.filter(c=>!('skipIfZero' in c) || c.skipIfZero>0);
+  const kpis=$('#kpis');
+  kpis.style.gridTemplateColumns=`repeat(${shown.length},1fr)`;
+  kpis.innerHTML = shown.map(c=>`
     <div class="kpi ${c.cls}" style="--accent-2:${c.color}">
       <div class="lab"><svg viewBox="0 0 24 24" fill="none" stroke="${c.color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICO[c.ico]}</svg>${c.lab}</div>
       <div class="val" style="color:${c.color==='#a78bfa'||c.color==='#3b82f6'?'var(--text)':c.color}">${c.val}</div>
@@ -249,7 +256,7 @@ function renderSnapshot(){
     {lab:'Crashed before result', v:sc.ERROR, of:total, c:SMETA.ERROR.c},
     {lab:'No reference to check', v:sc.NO_GOLDEN, of:total, c:SMETA.NO_GOLDEN.c},
     {lab:'Skipped / unsupported', v:sc.SKIP+sc.NOT_IN_TTNN, of:total, c:SMETA.SKIP.c},
-  ];
+  ].filter(r=>r.v>0);  // hide categories absent from the current dataset
   $('#snapshot').innerHTML=rows.map(r=>`
     <div>
       <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px">
@@ -271,6 +278,7 @@ const state = {
   solo:null,                     // soloed status or null
   open:new Set(),                // expanded op rows
 };
+// status columns are dropped when that status has zero configs in the dataset
 const COLS=[
   {k:'op', label:'Operation', num:false},
   {k:'composition', label:'Outcome Composition', num:false, nosort:true},
@@ -281,7 +289,7 @@ const COLS=[
   {k:'NO_GOLDEN', label:'NoGold', num:true},
   {k:'SKIP', label:'Skip', num:true},
   {k:'total', label:'Σ', num:true},
-];
+].filter(c=>!SMETA[c.k] || (D.statusCounts[c.k]||0) > 0);
 
 function renderChips(){
   const sc=D.statusCounts;
@@ -374,6 +382,7 @@ function renderTable(){
   if(!rows.length){ tb.innerHTML=''; $('#emptyState').hidden=false; return; }
   $('#emptyState').hidden=true;
 
+  const hasCol=k=>COLS.some(c=>c.k===k); // column survived the zero-count filter?
   tb.innerHTML = rows.map(o=>{
     const open=state.open.has(o.op);
     return `<tr class="op-row ${open?'open':''}" data-op="${o.op}">
@@ -383,8 +392,8 @@ function renderTable(){
       <td class="num" style="color:var(--pass)">${o.PASS||'<span class="b0">0</span>'}</td>
       <td class="num">${badge(o.PCC_FAIL,'PCC_FAIL')}</td>
       <td class="num">${badge(o.ERROR,'ERROR')}</td>
-      <td class="num" style="color:var(--nogold)">${o.NO_GOLDEN||'<span class="b0">0</span>'}</td>
-      <td class="num" style="color:var(--faint)">${o.SKIP||'<span class="b0">0</span>'}</td>
+      ${hasCol('NO_GOLDEN')?`<td class="num" style="color:var(--nogold)">${o.NO_GOLDEN||'<span class="b0">0</span>'}</td>`:''}
+      ${hasCol('SKIP')?`<td class="num" style="color:var(--faint)">${o.SKIP||'<span class="b0">0</span>'}</td>`:''}
       <td class="num mono" style="color:var(--dim)">${o.total}</td>
     </tr>` + (open?detailRow(o.op):'');
   }).join('');
