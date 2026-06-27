@@ -48,7 +48,9 @@ Keyboard: `/` focuses search · `Esc` clears search/solo.
 └── package.json
 ```
 
-`public/data.js` is a build artifact — regenerate it whenever `ops.csv` changes.
+`public/data.js` is a **build artifact** — it is *not* committed. CI regenerates it from
+`ops.csv` on every deploy (and you regenerate it locally with `python3 process.py`).
+**`ops.csv` is the single source of truth.**
 
 ---
 
@@ -84,7 +86,26 @@ After the first deploy it's live at:
 https://ttnn-ops-coverage.<your-subdomain>.workers.dev
 ```
 
-To attach a custom domain or route, add a `routes` block to `wrangler.jsonc` (see the [Workers config docs](https://developers.cloudflare.com/workers/wrangler/configuration/)).
+Custom domain: **https://ttnn-ops-coverage.aswincloud.com/**
+
+### Auto-deploy on push (CI)
+
+Every push to `main` that touches `ops.csv`, `process.py`, `public/**`, or the config
+triggers [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml), which:
+
+1. runs `python3 process.py` → rebuilds `public/data.js` from the CSV, then
+2. runs `wrangler deploy` → ships to Cloudflare.
+
+So **updating the dashboard is just**: replace `ops.csv`, commit, push. No manual deploy.
+
+This requires two repo secrets (one-time setup):
+
+```bash
+gh secret set CLOUDFLARE_API_TOKEN  --repo Aswincloud/ttnn-ops-coverage   # Workers-edit token
+gh secret set CLOUDFLARE_ACCOUNT_ID --repo Aswincloud/ttnn-ops-coverage   # your CF account id
+```
+
+Create the token at **Cloudflare dashboard → My Profile → API Tokens → Create Token → "Edit Cloudflare Workers"**.
 
 ---
 
