@@ -9,12 +9,12 @@ const pct = (n,d)=> d? (100*n/d):0;
 
 /* ---- status meta ---- */
 const SMETA = {
-  PASS:       {c:'#10b981', label:'Pass',          short:'PASS'},
-  PCC_FAIL:   {c:'#f59e0b', label:'PCC Fail',       short:'PCC'},
-  ERROR:      {c:'#ef4444', label:'Hard Error',     short:'ERR'},
-  NO_GOLDEN:  {c:'#38bdf8', label:'No Golden Ref',  short:'NOGOLD'},
-  SKIP:       {c:'#64748b', label:'Skipped',        short:'SKIP'},
-  NOT_IN_TTNN:{c:'#475569', label:'Not in TTNN',    short:'N/A'},
+  PASS:       {c:'#10b981', label:'Pass',          short:'PASS',   desc:'Output matched the golden reference within the PCC accuracy threshold.'},
+  PCC_FAIL:   {c:'#f59e0b', label:'PCC Fail',       short:'PCC',    desc:'Ran to completion, but the result was numerically inaccurate — PCC below threshold or NaN.'},
+  ERROR:      {c:'#ef4444', label:'Hard Error',     short:'ERR',    desc:'Crashed before producing a result (TT_FATAL / TT_THROW — a device assertion or build failure).'},
+  NO_GOLDEN:  {c:'#38bdf8', label:'No Golden Ref',  short:'NOGOLD', desc:'Ran, but there was no golden reference output to verify the result against.'},
+  SKIP:       {c:'#64748b', label:'Skipped',        short:'SKIP',   desc:'Intentionally skipped — this configuration is unsupported for the op.'},
+  NOT_IN_TTNN:{c:'#475569', label:'Not in TTNN',    short:'N/A',    desc:'The operation is not implemented in TTNN.'},
 };
 const ORDER = ['PASS','PCC_FAIL','ERROR','NO_GOLDEN','SKIP','NOT_IN_TTNN'];
 
@@ -149,9 +149,12 @@ function renderDonut(){
       <div class="big">${fmt(total)}</div>
       <div class="small">tests run</div>
     </div>`;
+  const sliceTip = s => tipHead(s)+
+    `<div class="t-r"><b>${fmt(sc[s])}</b> configs · <b>${pct(sc[s],total).toFixed(1)}%</b></div>`+
+    `<div class="t-d">${SMETA[s].desc}</div>`;
   $$('#donut path').forEach(p=>{
-    const s=p.dataset.s, v=sc[s];
-    p.addEventListener('mousemove',e=>showTip(tipHead(s)+`<div class="t-r"><b>${fmt(v)}</b> configs · <b>${pct(v,total).toFixed(1)}%</b></div>`,e));
+    const s=p.dataset.s;
+    p.addEventListener('mousemove',e=>showTip(sliceTip(s),e));
     p.addEventListener('mouseleave',hideTip);
     p.addEventListener('click',()=>soloStatus(s));
   });
@@ -165,7 +168,12 @@ function renderDonut(){
       <span class="ct tnum">${fmt(v)}</span>
       <span class="pc">${pct(v,total).toFixed(1)}%</span>
     </div>`;}).join('');
-  $$('#legend .lg-item').forEach(el=>el.addEventListener('click',()=>soloStatus(el.dataset.s)));
+  $$('#legend .lg-item').forEach(el=>{
+    const s=el.dataset.s;
+    el.addEventListener('click',()=>soloStatus(s));
+    el.addEventListener('mousemove',e=>showTip(sliceTip(s),e));
+    el.addEventListener('mouseleave',hideTip);
+  });
 }
 
 /* =========================================================
