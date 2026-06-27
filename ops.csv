@@ -23775,30 +23775,30 @@ concat_bw,int32,tile,l1,OK,pass
 concat_bw,uint32,tile,l1,OK,pass
 concat_bw,uint16,tile,l1,OK,pass
 concat_bw,uint8,tile,l1,FAIL,"TT_FATAL @ /home/ubuntu/tt-metal/ttnn/cpp/ttnn/operations/data_movement/copy/device/copy_device_operation.cpp:87: input_tensor_a.dtype() == DataType::BFLOAT16 or input_tensor_a.dtype() == DataType::BFLOAT8_B or input_tensor_a.dtype() == DataType::FLOAT32 or input_tensor_a.dtype() == DataType::BFLOAT4_B or input_tensor_a.dtype() == DataType::UINT32 or input_tensor_a.dtype() == DataType::INT32 or input_tensor_a.dtype() == DataType::UINT16 | info: | ttnn.copy only supports float, bfloat, int32 and uint16 inputs but got DataType::UINT8"
-concat_bw,bfloat16,tile,height,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Number of shards along height 2 must not exceed number of cores 1
-concat_bw,bfloat8_b,tile,height,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Number of shards along height 2 must not exceed number of cores 1
-concat_bw,bfloat4_b,tile,height,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Number of shards along height 2 must not exceed number of cores 1
-concat_bw,float32,tile,height,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Number of shards along height 2 must not exceed number of cores 1
-concat_bw,int32,tile,height,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Number of shards along height 2 must not exceed number of cores 1
-concat_bw,uint32,tile,height,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Number of shards along height 2 must not exceed number of cores 1
-concat_bw,uint16,tile,height,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Number of shards along height 2 must not exceed number of cores 1
-concat_bw,uint8,tile,height,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Number of shards along height 2 must not exceed number of cores 1
-concat_bw,bfloat16,tile,width,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Shard height 32 must match physical height 64 for width sharded
-concat_bw,bfloat8_b,tile,width,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Shard height 32 must match physical height 64 for width sharded
-concat_bw,bfloat4_b,tile,width,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Shard height 32 must match physical height 64 for width sharded
-concat_bw,float32,tile,width,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Shard height 32 must match physical height 64 for width sharded
-concat_bw,int32,tile,width,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Shard height 32 must match physical height 64 for width sharded
-concat_bw,uint32,tile,width,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Shard height 32 must match physical height 64 for width sharded
-concat_bw,uint16,tile,width,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Shard height 32 must match physical height 64 for width sharded
-concat_bw,uint8,tile,width,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Shard height 32 must match physical height 64 for width sharded
-concat_bw,bfloat16,tile,block,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Number of shards along height 2 must not exceed number of rows 1 for row major orientation!
-concat_bw,bfloat8_b,tile,block,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Number of shards along height 2 must not exceed number of rows 1 for row major orientation!
-concat_bw,bfloat4_b,tile,block,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Number of shards along height 2 must not exceed number of rows 1 for row major orientation!
-concat_bw,float32,tile,block,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Number of shards along height 2 must not exceed number of rows 1 for row major orientation!
-concat_bw,int32,tile,block,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Number of shards along height 2 must not exceed number of rows 1 for row major orientation!
-concat_bw,uint32,tile,block,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Number of shards along height 2 must not exceed number of rows 1 for row major orientation!
-concat_bw,uint16,tile,block,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Number of shards along height 2 must not exceed number of rows 1 for row major orientation!
-concat_bw,uint8,tile,block,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Number of shards along height 2 must not exceed number of rows 1 for row major orientation!
+concat_bw,bfloat16,tile,height,OK,pass
+concat_bw,bfloat8_b,tile,height,OK,pass
+concat_bw,bfloat4_b,tile,height,OK,pass
+concat_bw,float32,tile,height,OK,pass
+concat_bw,int32,tile,height,OK,pass
+concat_bw,uint32,tile,height,OK,pass
+concat_bw,uint16,tile,height,OK,pass
+concat_bw,uint8,tile,height,OK,pass
+concat_bw,bfloat16,tile,width,OK,pass
+concat_bw,bfloat8_b,tile,width,OK,pass
+concat_bw,bfloat4_b,tile,width,OK,pass
+concat_bw,float32,tile,width,OK,pass
+concat_bw,int32,tile,width,OK,pass
+concat_bw,uint32,tile,width,OK,pass
+concat_bw,uint16,tile,width,OK,pass
+concat_bw,uint8,tile,width,OK,pass
+concat_bw,bfloat16,tile,block,OK,pass
+concat_bw,bfloat8_b,tile,block,OK,pass
+concat_bw,bfloat4_b,tile,block,OK,pass
+concat_bw,float32,tile,block,OK,pass
+concat_bw,int32,tile,block,OK,pass
+concat_bw,uint32,tile,block,OK,pass
+concat_bw,uint16,tile,block,OK,pass
+concat_bw,uint8,tile,block,OK,pass
 concat_bw,bfloat16,rm,dram,OK,pass
 concat_bw,bfloat8_b,rm,dram,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/ttnn/core/tensor/py_to_tt_tensor.cpp:372: layout == Layout::TILE | info: | Layout must be Layout::TILE for bfloat8_b or bfloat4_b!
 concat_bw,bfloat4_b,rm,dram,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/ttnn/core/tensor/py_to_tt_tensor.cpp:372: layout == Layout::TILE | info: | Layout must be Layout::TILE for bfloat8_b or bfloat4_b!
@@ -23815,30 +23815,30 @@ concat_bw,int32,rm,l1,OK,pass
 concat_bw,uint32,rm,l1,OK,pass
 concat_bw,uint16,rm,l1,OK,pass
 concat_bw,uint8,rm,l1,FAIL,"TT_FATAL @ /home/ubuntu/tt-metal/ttnn/cpp/ttnn/operations/data_movement/copy/device/copy_device_operation.cpp:87: input_tensor_a.dtype() == DataType::BFLOAT16 or input_tensor_a.dtype() == DataType::BFLOAT8_B or input_tensor_a.dtype() == DataType::FLOAT32 or input_tensor_a.dtype() == DataType::BFLOAT4_B or input_tensor_a.dtype() == DataType::UINT32 or input_tensor_a.dtype() == DataType::INT32 or input_tensor_a.dtype() == DataType::UINT16 | info: | ttnn.copy only supports float, bfloat, int32 and uint16 inputs but got DataType::UINT8"
-concat_bw,bfloat16,rm,height,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Number of shards along height 2 must not exceed number of cores 1
+concat_bw,bfloat16,rm,height,OK,pass
 concat_bw,bfloat8_b,rm,height,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/ttnn/core/tensor/py_to_tt_tensor.cpp:372: layout == Layout::TILE | info: | Layout must be Layout::TILE for bfloat8_b or bfloat4_b!
 concat_bw,bfloat4_b,rm,height,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/ttnn/core/tensor/py_to_tt_tensor.cpp:372: layout == Layout::TILE | info: | Layout must be Layout::TILE for bfloat8_b or bfloat4_b!
-concat_bw,float32,rm,height,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Number of shards along height 2 must not exceed number of cores 1
-concat_bw,int32,rm,height,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Number of shards along height 2 must not exceed number of cores 1
-concat_bw,uint32,rm,height,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Number of shards along height 2 must not exceed number of cores 1
-concat_bw,uint16,rm,height,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Number of shards along height 2 must not exceed number of cores 1
-concat_bw,uint8,rm,height,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Number of shards along height 2 must not exceed number of cores 1
-concat_bw,bfloat16,rm,width,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Shard height 32 must match physical height 64 for width sharded
+concat_bw,float32,rm,height,OK,pass
+concat_bw,int32,rm,height,OK,pass
+concat_bw,uint32,rm,height,OK,pass
+concat_bw,uint16,rm,height,OK,pass
+concat_bw,uint8,rm,height,OK,pass
+concat_bw,bfloat16,rm,width,OK,pass
 concat_bw,bfloat8_b,rm,width,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/ttnn/core/tensor/py_to_tt_tensor.cpp:372: layout == Layout::TILE | info: | Layout must be Layout::TILE for bfloat8_b or bfloat4_b!
 concat_bw,bfloat4_b,rm,width,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/ttnn/core/tensor/py_to_tt_tensor.cpp:372: layout == Layout::TILE | info: | Layout must be Layout::TILE for bfloat8_b or bfloat4_b!
-concat_bw,float32,rm,width,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Shard height 32 must match physical height 64 for width sharded
-concat_bw,int32,rm,width,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Shard height 32 must match physical height 64 for width sharded
-concat_bw,uint32,rm,width,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Shard height 32 must match physical height 64 for width sharded
-concat_bw,uint16,rm,width,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Shard height 32 must match physical height 64 for width sharded
-concat_bw,uint8,rm,width,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Shard height 32 must match physical height 64 for width sharded
-concat_bw,bfloat16,rm,block,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Number of shards along height 2 must not exceed number of rows 1 for row major orientation!
+concat_bw,float32,rm,width,OK,pass
+concat_bw,int32,rm,width,OK,pass
+concat_bw,uint32,rm,width,OK,pass
+concat_bw,uint16,rm,width,OK,pass
+concat_bw,uint8,rm,width,OK,pass
+concat_bw,bfloat16,rm,block,OK,pass
 concat_bw,bfloat8_b,rm,block,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/ttnn/core/tensor/py_to_tt_tensor.cpp:372: layout == Layout::TILE | info: | Layout must be Layout::TILE for bfloat8_b or bfloat4_b!
 concat_bw,bfloat4_b,rm,block,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/ttnn/core/tensor/py_to_tt_tensor.cpp:372: layout == Layout::TILE | info: | Layout must be Layout::TILE for bfloat8_b or bfloat4_b!
-concat_bw,float32,rm,block,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Number of shards along height 2 must not exceed number of rows 1 for row major orientation!
-concat_bw,int32,rm,block,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Number of shards along height 2 must not exceed number of rows 1 for row major orientation!
-concat_bw,uint32,rm,block,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Number of shards along height 2 must not exceed number of rows 1 for row major orientation!
-concat_bw,uint16,rm,block,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Number of shards along height 2 must not exceed number of rows 1 for row major orientation!
-concat_bw,uint8,rm,block,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Number of shards along height 2 must not exceed number of rows 1 for row major orientation!
+concat_bw,float32,rm,block,OK,pass
+concat_bw,int32,rm,block,OK,pass
+concat_bw,uint32,rm,block,OK,pass
+concat_bw,uint16,rm,block,OK,pass
+concat_bw,uint8,rm,block,OK,pass
 repeat_bw,bfloat16,tile,dram,OK,pass
 repeat_bw,bfloat8_b,tile,dram,FAIL,"TT_FATAL @ /home/ubuntu/tt-metal/ttnn/cpp/ttnn/operations/moreh/moreh_helper_functions.cpp:282: dtype_supported | info: | moreh_sum input only supports specific data types. [BFLOAT16, INT32]"
 repeat_bw,bfloat4_b,tile,dram,FAIL,"TT_FATAL @ /home/ubuntu/tt-metal/ttnn/cpp/ttnn/operations/moreh/moreh_helper_functions.cpp:282: dtype_supported | info: | moreh_sum input only supports specific data types. [BFLOAT16, INT32]"
@@ -23855,30 +23855,30 @@ repeat_bw,int32,tile,l1,OK,pass
 repeat_bw,uint32,tile,l1,FAIL,"TT_FATAL @ /home/ubuntu/tt-metal/ttnn/cpp/ttnn/operations/moreh/moreh_helper_functions.cpp:282: dtype_supported | info: | moreh_sum input only supports specific data types. [BFLOAT16, INT32]"
 repeat_bw,uint16,tile,l1,FAIL,"TT_FATAL @ /home/ubuntu/tt-metal/ttnn/cpp/ttnn/operations/moreh/moreh_helper_functions.cpp:282: dtype_supported | info: | moreh_sum input only supports specific data types. [BFLOAT16, INT32]"
 repeat_bw,uint8,tile,l1,FAIL,"TT_FATAL @ /home/ubuntu/tt-metal/ttnn/cpp/ttnn/operations/moreh/moreh_helper_functions.cpp:282: dtype_supported | info: | moreh_sum input only supports specific data types. [BFLOAT16, INT32]"
-repeat_bw,bfloat16,tile,height,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Number of shards along height 2 must not exceed number of cores 1
-repeat_bw,bfloat8_b,tile,height,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Number of shards along height 2 must not exceed number of cores 1
-repeat_bw,bfloat4_b,tile,height,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Number of shards along height 2 must not exceed number of cores 1
-repeat_bw,float32,tile,height,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Number of shards along height 2 must not exceed number of cores 1
-repeat_bw,int32,tile,height,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Number of shards along height 2 must not exceed number of cores 1
-repeat_bw,uint32,tile,height,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Number of shards along height 2 must not exceed number of cores 1
-repeat_bw,uint16,tile,height,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Number of shards along height 2 must not exceed number of cores 1
-repeat_bw,uint8,tile,height,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Number of shards along height 2 must not exceed number of cores 1
-repeat_bw,bfloat16,tile,width,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Shard height 32 must match physical height 64 for width sharded
-repeat_bw,bfloat8_b,tile,width,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Shard height 32 must match physical height 64 for width sharded
-repeat_bw,bfloat4_b,tile,width,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Shard height 32 must match physical height 64 for width sharded
-repeat_bw,float32,tile,width,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Shard height 32 must match physical height 64 for width sharded
-repeat_bw,int32,tile,width,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Shard height 32 must match physical height 64 for width sharded
-repeat_bw,uint32,tile,width,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Shard height 32 must match physical height 64 for width sharded
-repeat_bw,uint16,tile,width,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Shard height 32 must match physical height 64 for width sharded
-repeat_bw,uint8,tile,width,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Shard height 32 must match physical height 64 for width sharded
-repeat_bw,bfloat16,tile,block,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Number of shards along height 2 must not exceed number of rows 1 for row major orientation!
-repeat_bw,bfloat8_b,tile,block,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Number of shards along height 2 must not exceed number of rows 1 for row major orientation!
-repeat_bw,bfloat4_b,tile,block,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Number of shards along height 2 must not exceed number of rows 1 for row major orientation!
-repeat_bw,float32,tile,block,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Number of shards along height 2 must not exceed number of rows 1 for row major orientation!
-repeat_bw,int32,tile,block,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Number of shards along height 2 must not exceed number of rows 1 for row major orientation!
-repeat_bw,uint32,tile,block,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Number of shards along height 2 must not exceed number of rows 1 for row major orientation!
-repeat_bw,uint16,tile,block,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Number of shards along height 2 must not exceed number of rows 1 for row major orientation!
-repeat_bw,uint8,tile,block,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Number of shards along height 2 must not exceed number of rows 1 for row major orientation!
+repeat_bw,bfloat16,tile,height,OK,pass
+repeat_bw,bfloat8_b,tile,height,FAIL,"TT_FATAL @ /home/ubuntu/tt-metal/ttnn/cpp/ttnn/operations/moreh/moreh_helper_functions.cpp:282: dtype_supported | info: | moreh_sum input only supports specific data types. [BFLOAT16, INT32]"
+repeat_bw,bfloat4_b,tile,height,FAIL,"TT_FATAL @ /home/ubuntu/tt-metal/ttnn/cpp/ttnn/operations/moreh/moreh_helper_functions.cpp:282: dtype_supported | info: | moreh_sum input only supports specific data types. [BFLOAT16, INT32]"
+repeat_bw,float32,tile,height,FAIL,"TT_FATAL @ /home/ubuntu/tt-metal/ttnn/cpp/ttnn/operations/moreh/moreh_helper_functions.cpp:282: dtype_supported | info: | moreh_sum input only supports specific data types. [BFLOAT16, INT32]"
+repeat_bw,int32,tile,height,OK,pass
+repeat_bw,uint32,tile,height,FAIL,"TT_FATAL @ /home/ubuntu/tt-metal/ttnn/cpp/ttnn/operations/moreh/moreh_helper_functions.cpp:282: dtype_supported | info: | moreh_sum input only supports specific data types. [BFLOAT16, INT32]"
+repeat_bw,uint16,tile,height,FAIL,"TT_FATAL @ /home/ubuntu/tt-metal/ttnn/cpp/ttnn/operations/moreh/moreh_helper_functions.cpp:282: dtype_supported | info: | moreh_sum input only supports specific data types. [BFLOAT16, INT32]"
+repeat_bw,uint8,tile,height,FAIL,"TT_FATAL @ /home/ubuntu/tt-metal/ttnn/cpp/ttnn/operations/moreh/moreh_helper_functions.cpp:282: dtype_supported | info: | moreh_sum input only supports specific data types. [BFLOAT16, INT32]"
+repeat_bw,bfloat16,tile,width,OK,pass
+repeat_bw,bfloat8_b,tile,width,FAIL,"TT_FATAL @ /home/ubuntu/tt-metal/ttnn/cpp/ttnn/operations/moreh/moreh_helper_functions.cpp:282: dtype_supported | info: | moreh_sum input only supports specific data types. [BFLOAT16, INT32]"
+repeat_bw,bfloat4_b,tile,width,FAIL,"TT_FATAL @ /home/ubuntu/tt-metal/ttnn/cpp/ttnn/operations/moreh/moreh_helper_functions.cpp:282: dtype_supported | info: | moreh_sum input only supports specific data types. [BFLOAT16, INT32]"
+repeat_bw,float32,tile,width,FAIL,"TT_FATAL @ /home/ubuntu/tt-metal/ttnn/cpp/ttnn/operations/moreh/moreh_helper_functions.cpp:282: dtype_supported | info: | moreh_sum input only supports specific data types. [BFLOAT16, INT32]"
+repeat_bw,int32,tile,width,OK,pass
+repeat_bw,uint32,tile,width,FAIL,"TT_FATAL @ /home/ubuntu/tt-metal/ttnn/cpp/ttnn/operations/moreh/moreh_helper_functions.cpp:282: dtype_supported | info: | moreh_sum input only supports specific data types. [BFLOAT16, INT32]"
+repeat_bw,uint16,tile,width,FAIL,"TT_FATAL @ /home/ubuntu/tt-metal/ttnn/cpp/ttnn/operations/moreh/moreh_helper_functions.cpp:282: dtype_supported | info: | moreh_sum input only supports specific data types. [BFLOAT16, INT32]"
+repeat_bw,uint8,tile,width,FAIL,"TT_FATAL @ /home/ubuntu/tt-metal/ttnn/cpp/ttnn/operations/moreh/moreh_helper_functions.cpp:282: dtype_supported | info: | moreh_sum input only supports specific data types. [BFLOAT16, INT32]"
+repeat_bw,bfloat16,tile,block,OK,pass
+repeat_bw,bfloat8_b,tile,block,FAIL,"TT_FATAL @ /home/ubuntu/tt-metal/ttnn/cpp/ttnn/operations/moreh/moreh_helper_functions.cpp:282: dtype_supported | info: | moreh_sum input only supports specific data types. [BFLOAT16, INT32]"
+repeat_bw,bfloat4_b,tile,block,FAIL,"TT_FATAL @ /home/ubuntu/tt-metal/ttnn/cpp/ttnn/operations/moreh/moreh_helper_functions.cpp:282: dtype_supported | info: | moreh_sum input only supports specific data types. [BFLOAT16, INT32]"
+repeat_bw,float32,tile,block,FAIL,"TT_FATAL @ /home/ubuntu/tt-metal/ttnn/cpp/ttnn/operations/moreh/moreh_helper_functions.cpp:282: dtype_supported | info: | moreh_sum input only supports specific data types. [BFLOAT16, INT32]"
+repeat_bw,int32,tile,block,OK,pass
+repeat_bw,uint32,tile,block,FAIL,"TT_FATAL @ /home/ubuntu/tt-metal/ttnn/cpp/ttnn/operations/moreh/moreh_helper_functions.cpp:282: dtype_supported | info: | moreh_sum input only supports specific data types. [BFLOAT16, INT32]"
+repeat_bw,uint16,tile,block,FAIL,"TT_FATAL @ /home/ubuntu/tt-metal/ttnn/cpp/ttnn/operations/moreh/moreh_helper_functions.cpp:282: dtype_supported | info: | moreh_sum input only supports specific data types. [BFLOAT16, INT32]"
+repeat_bw,uint8,tile,block,FAIL,"TT_FATAL @ /home/ubuntu/tt-metal/ttnn/cpp/ttnn/operations/moreh/moreh_helper_functions.cpp:282: dtype_supported | info: | moreh_sum input only supports specific data types. [BFLOAT16, INT32]"
 repeat_bw,bfloat16,rm,dram,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/ttnn/cpp/ttnn/operations/moreh/moreh_helper_functions.cpp:256: tensor.layout() == layout | info: | moreh_sum input only supports TILE layout.
 repeat_bw,bfloat8_b,rm,dram,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/ttnn/core/tensor/py_to_tt_tensor.cpp:372: layout == Layout::TILE | info: | Layout must be Layout::TILE for bfloat8_b or bfloat4_b!
 repeat_bw,bfloat4_b,rm,dram,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/ttnn/core/tensor/py_to_tt_tensor.cpp:372: layout == Layout::TILE | info: | Layout must be Layout::TILE for bfloat8_b or bfloat4_b!
@@ -23895,27 +23895,27 @@ repeat_bw,int32,rm,l1,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/ttnn/cpp/ttnn/operat
 repeat_bw,uint32,rm,l1,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/ttnn/cpp/ttnn/operations/moreh/moreh_helper_functions.cpp:256: tensor.layout() == layout | info: | moreh_sum input only supports TILE layout.
 repeat_bw,uint16,rm,l1,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/ttnn/cpp/ttnn/operations/moreh/moreh_helper_functions.cpp:256: tensor.layout() == layout | info: | moreh_sum input only supports TILE layout.
 repeat_bw,uint8,rm,l1,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/ttnn/cpp/ttnn/operations/moreh/moreh_helper_functions.cpp:256: tensor.layout() == layout | info: | moreh_sum input only supports TILE layout.
-repeat_bw,bfloat16,rm,height,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Number of shards along height 2 must not exceed number of cores 1
+repeat_bw,bfloat16,rm,height,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/ttnn/cpp/ttnn/operations/moreh/moreh_helper_functions.cpp:256: tensor.layout() == layout | info: | moreh_sum input only supports TILE layout.
 repeat_bw,bfloat8_b,rm,height,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/ttnn/core/tensor/py_to_tt_tensor.cpp:372: layout == Layout::TILE | info: | Layout must be Layout::TILE for bfloat8_b or bfloat4_b!
 repeat_bw,bfloat4_b,rm,height,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/ttnn/core/tensor/py_to_tt_tensor.cpp:372: layout == Layout::TILE | info: | Layout must be Layout::TILE for bfloat8_b or bfloat4_b!
-repeat_bw,float32,rm,height,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Number of shards along height 2 must not exceed number of cores 1
-repeat_bw,int32,rm,height,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Number of shards along height 2 must not exceed number of cores 1
-repeat_bw,uint32,rm,height,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Number of shards along height 2 must not exceed number of cores 1
-repeat_bw,uint16,rm,height,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Number of shards along height 2 must not exceed number of cores 1
-repeat_bw,uint8,rm,height,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Number of shards along height 2 must not exceed number of cores 1
-repeat_bw,bfloat16,rm,width,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Shard height 32 must match physical height 64 for width sharded
+repeat_bw,float32,rm,height,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/ttnn/cpp/ttnn/operations/moreh/moreh_helper_functions.cpp:256: tensor.layout() == layout | info: | moreh_sum input only supports TILE layout.
+repeat_bw,int32,rm,height,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/ttnn/cpp/ttnn/operations/moreh/moreh_helper_functions.cpp:256: tensor.layout() == layout | info: | moreh_sum input only supports TILE layout.
+repeat_bw,uint32,rm,height,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/ttnn/cpp/ttnn/operations/moreh/moreh_helper_functions.cpp:256: tensor.layout() == layout | info: | moreh_sum input only supports TILE layout.
+repeat_bw,uint16,rm,height,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/ttnn/cpp/ttnn/operations/moreh/moreh_helper_functions.cpp:256: tensor.layout() == layout | info: | moreh_sum input only supports TILE layout.
+repeat_bw,uint8,rm,height,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/ttnn/cpp/ttnn/operations/moreh/moreh_helper_functions.cpp:256: tensor.layout() == layout | info: | moreh_sum input only supports TILE layout.
+repeat_bw,bfloat16,rm,width,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/ttnn/cpp/ttnn/operations/moreh/moreh_helper_functions.cpp:256: tensor.layout() == layout | info: | moreh_sum input only supports TILE layout.
 repeat_bw,bfloat8_b,rm,width,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/ttnn/core/tensor/py_to_tt_tensor.cpp:372: layout == Layout::TILE | info: | Layout must be Layout::TILE for bfloat8_b or bfloat4_b!
 repeat_bw,bfloat4_b,rm,width,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/ttnn/core/tensor/py_to_tt_tensor.cpp:372: layout == Layout::TILE | info: | Layout must be Layout::TILE for bfloat8_b or bfloat4_b!
-repeat_bw,float32,rm,width,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Shard height 32 must match physical height 64 for width sharded
-repeat_bw,int32,rm,width,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Shard height 32 must match physical height 64 for width sharded
-repeat_bw,uint32,rm,width,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Shard height 32 must match physical height 64 for width sharded
-repeat_bw,uint16,rm,width,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Shard height 32 must match physical height 64 for width sharded
-repeat_bw,uint8,rm,width,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Shard height 32 must match physical height 64 for width sharded
-repeat_bw,bfloat16,rm,block,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Number of shards along height 2 must not exceed number of rows 1 for row major orientation!
+repeat_bw,float32,rm,width,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/ttnn/cpp/ttnn/operations/moreh/moreh_helper_functions.cpp:256: tensor.layout() == layout | info: | moreh_sum input only supports TILE layout.
+repeat_bw,int32,rm,width,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/ttnn/cpp/ttnn/operations/moreh/moreh_helper_functions.cpp:256: tensor.layout() == layout | info: | moreh_sum input only supports TILE layout.
+repeat_bw,uint32,rm,width,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/ttnn/cpp/ttnn/operations/moreh/moreh_helper_functions.cpp:256: tensor.layout() == layout | info: | moreh_sum input only supports TILE layout.
+repeat_bw,uint16,rm,width,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/ttnn/cpp/ttnn/operations/moreh/moreh_helper_functions.cpp:256: tensor.layout() == layout | info: | moreh_sum input only supports TILE layout.
+repeat_bw,uint8,rm,width,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/ttnn/cpp/ttnn/operations/moreh/moreh_helper_functions.cpp:256: tensor.layout() == layout | info: | moreh_sum input only supports TILE layout.
+repeat_bw,bfloat16,rm,block,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/ttnn/cpp/ttnn/operations/moreh/moreh_helper_functions.cpp:256: tensor.layout() == layout | info: | moreh_sum input only supports TILE layout.
 repeat_bw,bfloat8_b,rm,block,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/ttnn/core/tensor/py_to_tt_tensor.cpp:372: layout == Layout::TILE | info: | Layout must be Layout::TILE for bfloat8_b or bfloat4_b!
 repeat_bw,bfloat4_b,rm,block,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/ttnn/core/tensor/py_to_tt_tensor.cpp:372: layout == Layout::TILE | info: | Layout must be Layout::TILE for bfloat8_b or bfloat4_b!
-repeat_bw,float32,rm,block,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Number of shards along height 2 must not exceed number of rows 1 for row major orientation!
-repeat_bw,int32,rm,block,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Number of shards along height 2 must not exceed number of rows 1 for row major orientation!
-repeat_bw,uint32,rm,block,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Number of shards along height 2 must not exceed number of rows 1 for row major orientation!
-repeat_bw,uint16,rm,block,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Number of shards along height 2 must not exceed number of rows 1 for row major orientation!
-repeat_bw,uint8,rm,block,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/tt_metal/impl/tensor/spec/tensor_spec.cpp:153: !shard_grid_fit_error.has_value() | info: | Number of shards along height 2 must not exceed number of rows 1 for row major orientation!
+repeat_bw,float32,rm,block,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/ttnn/cpp/ttnn/operations/moreh/moreh_helper_functions.cpp:256: tensor.layout() == layout | info: | moreh_sum input only supports TILE layout.
+repeat_bw,int32,rm,block,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/ttnn/cpp/ttnn/operations/moreh/moreh_helper_functions.cpp:256: tensor.layout() == layout | info: | moreh_sum input only supports TILE layout.
+repeat_bw,uint32,rm,block,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/ttnn/cpp/ttnn/operations/moreh/moreh_helper_functions.cpp:256: tensor.layout() == layout | info: | moreh_sum input only supports TILE layout.
+repeat_bw,uint16,rm,block,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/ttnn/cpp/ttnn/operations/moreh/moreh_helper_functions.cpp:256: tensor.layout() == layout | info: | moreh_sum input only supports TILE layout.
+repeat_bw,uint8,rm,block,FAIL,TT_FATAL @ /home/ubuntu/tt-metal/ttnn/cpp/ttnn/operations/moreh/moreh_helper_functions.cpp:256: tensor.layout() == layout | info: | moreh_sum input only supports TILE layout.
