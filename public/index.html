@@ -430,16 +430,16 @@ footer a{color:var(--dim);text-decoration:none;border-bottom:1px dotted #3a4d6e}
     </div>
   </div>
 
-  <div class="grid dims" style="grid-template-columns:1fr 1fr;margin-bottom:14px">
+  <div class="grid row-charts" style="align-items:start;margin-bottom:14px">
+    <div class="panel">
+      <h2><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Coverage Snapshot</h2>
+      <div class="ph-sub">How the <b id="snapTotal"></b> configs split between verifiable and unverifiable</div>
+      <div id="snapshot" style="display:flex;flex-direction:column;gap:12px;flex:1;justify-content:center"></div>
+    </div>
     <div class="panel">
       <h2><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.3 3.3 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.3a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/></svg>Top Hard-Error Signatures</h2>
       <div class="ph-sub">Device assertion &amp; build failures (<b id="errTotal"></b> total), grouped by source location</div>
       <div class="efam" id="efam"></div>
-    </div>
-    <div class="panel">
-      <h2><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Coverage Snapshot</h2>
-      <div class="ph-sub">How the <b id="snapTotal"></b> configs split between verifiable and unverifiable</div>
-      <div id="snapshot" style="display:flex;flex-direction:column;gap:10px;flex:1;justify-content:center"></div>
     </div>
   </div>
 
