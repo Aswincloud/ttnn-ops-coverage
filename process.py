@@ -49,6 +49,10 @@ def classify(accepted, p):
         if msg:
             short += f" — {msg}"
         return "ERROR", short
+    # process-level crash (e.g. accepted=CRASH, reason="segfault-rc139")
+    if accepted == "CRASH" or "segfault" in p.lower():
+        m = re.search(r"rc(\d+)", p)
+        return "ERROR", f"Segfault{f' (exit {m.group(1)})' if m else ''}"
     # fallback
     return "ERROR", re.sub(r"\s+", " ", p)[:90]
 
