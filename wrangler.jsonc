@@ -1,15 +1,26 @@
 {
-  // Cloudflare Workers — Static Assets deployment.
-  // Pure static site (no Worker script). `wrangler deploy` uploads ./public
-  // and serves it directly from Cloudflare's edge.
+  // Cloudflare Workers — static dashboard + a tiny feedback API.
+  //
+  // The Worker (worker/index.js) serves ./public via the ASSETS binding for
+  // every request EXCEPT `POST /api/feedback`, which emails suggestions/bug
+  // reports to the maintainer via Resend.
+  //
+  // Required secret (set in the Cloudflare dashboard → Settings → Variables,
+  // or `npx wrangler secret put RESEND_API_KEY`):
+  //   RESEND_API_KEY
+  // Optional plain vars (below): FEEDBACK_TO, FROM_EMAIL.
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "ttnn-ops-coverage",
+  "main": "worker/index.js",
   "compatibility_date": "2026-06-20",
   "assets": {
     "directory": "./public",
-    // index.html is the only route; clean URLs, no SPA rewrite needed.
+    "binding": "ASSETS",
     "html_handling": "auto-trailing-slash",
     "not_found_handling": "404-page"
+  },
+  "vars": {
+    "FEEDBACK_TO": "aswin@aswincloud.com"
   },
   "observability": {
     "enabled": true

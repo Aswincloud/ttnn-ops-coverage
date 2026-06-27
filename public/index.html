@@ -108,6 +108,86 @@ header.top{
 .xlink:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 @media(max-width:760px){.xlink .xt{display:none}.xlink{padding:8px 9px}}
 
+/* ---- suggest button ---- */
+.suggest-btn{
+  display:flex;align-items:center;gap:8px;flex:none;cursor:pointer;font-family:var(--sans);
+  font-size:12.5px;font-weight:600;color:var(--text);
+  background:linear-gradient(165deg,#13233f,#0e1a2e);border:1px solid #2a456f;border-radius:10px;
+  padding:8px 13px;transition:border-color var(--t),background var(--t),box-shadow var(--t),transform var(--t);
+}
+.suggest-btn:hover{border-color:var(--primary);background:linear-gradient(165deg,#16294a,#102036);box-shadow:0 0 0 3px #3b82f622;transform:translateY(-1px)}
+.suggest-btn svg{width:16px;height:16px;color:var(--primary-hi);flex:none}
+.suggest-btn:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
+@media(max-width:760px){.suggest-btn .st-label{display:none}.suggest-btn{padding:8px 9px}}
+
+/* ---- modal ---- */
+.modal-overlay{
+  position:fixed;inset:0;z-index:1000;display:grid;place-items:center;padding:20px;
+  background:#05080fcc;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);
+  animation:ovIn 160ms ease-out;
+}
+@keyframes ovIn{from{opacity:0}to{opacity:1}}
+.modal{
+  width:min(560px,100%);max-height:90dvh;overflow-y:auto;position:relative;
+  background:linear-gradient(170deg,var(--card),var(--card-2));
+  border:1px solid var(--border-hi);border-radius:18px;
+  box-shadow:0 30px 80px -20px #000e,0 0 0 1px #ffffff08 inset;
+  padding:24px 24px 20px;animation:mIn 200ms cubic-bezier(.34,1.2,.64,1);
+}
+@keyframes mIn{from{opacity:0;transform:translateY(14px) scale(.985)}to{opacity:1;transform:none}}
+.modal-x{
+  position:absolute;top:14px;right:14px;width:32px;height:32px;display:grid;place-items:center;
+  background:transparent;border:1px solid transparent;border-radius:8px;color:var(--faint);cursor:pointer;transition:all var(--t);
+}
+.modal-x:hover{color:var(--text);background:#ffffff0a;border-color:var(--border)}
+.modal-x svg{width:17px;height:17px}
+.modal-head{display:flex;gap:14px;align-items:flex-start;margin-bottom:18px;padding-right:34px}
+.modal-ico{
+  width:42px;height:42px;border-radius:11px;flex:none;display:grid;place-items:center;
+  background:linear-gradient(150deg,#1e3a8a,#0b1d45);border:1px solid #2c4a8f55;color:#bcd3ff;
+}
+.modal-ico svg{width:21px;height:21px}
+.modal h2{font-size:18px;font-weight:700;letter-spacing:-.01em}
+.modal-sub{font-size:12.5px;color:var(--dim);line-height:1.5;margin-top:4px}
+.modal-sub b{color:var(--pcc)}
+.fld{display:block;margin-bottom:14px}
+.fl{display:block;font-size:12px;font-weight:600;color:var(--dim);margin-bottom:6px}
+.fl .opt{font-weight:400;color:var(--faint)}
+.inp{
+  width:100%;font-family:var(--sans);font-size:13.5px;color:var(--text);
+  background:var(--card-2);border:1px solid var(--border);border-radius:9px;padding:10px 12px;
+  transition:border-color var(--t),box-shadow var(--t);resize:vertical;
+}
+.inp.mono{font-family:var(--mono);font-size:12.5px}
+textarea.inp{min-height:84px;line-height:1.5}
+.inp::placeholder{color:var(--faint)}
+.inp:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px #3b82f628}
+select.inp{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%235d6f8e' stroke-width='3'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;padding-right:34px}
+.fh{display:block;font-size:11px;color:var(--faint);margin-top:5px;font-family:var(--mono)}
+.hp{position:absolute;left:-9999px;width:1px;height:1px;opacity:0;pointer-events:none}
+.modal-foot{display:flex;align-items:center;gap:12px;margin-top:18px;flex-wrap:wrap}
+.form-msg{flex:1;min-width:120px;font-size:12.5px;font-family:var(--mono)}
+.form-msg.err{color:#fca5a5}
+.form-msg.ok{color:var(--pass)}
+.modal-actions{display:flex;gap:10px;flex:none}
+.btn-ghost{
+  font-family:var(--sans);font-size:13px;font-weight:500;color:var(--dim);cursor:pointer;
+  background:transparent;border:1px solid var(--border);border-radius:9px;padding:9px 15px;transition:all var(--t);
+}
+.btn-ghost:hover{color:var(--text);border-color:var(--border-hi);background:#ffffff06}
+.btn-primary{
+  display:inline-flex;align-items:center;gap:8px;font-family:var(--sans);font-size:13px;font-weight:600;color:#fff;cursor:pointer;
+  background:linear-gradient(165deg,#2563eb,#1d4ed8);border:1px solid #3b82f6;border-radius:9px;padding:9px 18px;transition:all var(--t);
+}
+.btn-primary:hover{background:linear-gradient(165deg,#3b82f6,#2563eb);box-shadow:0 6px 18px -6px #3b82f6aa}
+.btn-primary:disabled{opacity:.6;cursor:not-allowed;box-shadow:none}
+.btn-primary:focus-visible,.btn-ghost:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
+.bp-spin{width:15px;height:15px;display:none;animation:spin 700ms linear infinite}
+.btn-primary.loading .bp-spin{display:block}
+.btn-primary.loading .bp-label{opacity:.85}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media(max-width:760px){.modal{padding:20px 16px 16px}.modal-foot{flex-direction:column;align-items:stretch}.modal-actions{justify-content:flex-end}}
+
 /* ---------- kpi ---------- */
 .kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:13px;margin-bottom:18px}
 .kpi{
@@ -291,6 +371,12 @@ footer a{color:var(--dim);text-decoration:none;border-bottom:1px dotted #3a4d6e}
       </div>
     </div>
     <div class="spacer"></div>
+    <button class="suggest-btn" id="suggestOpen" type="button" aria-haspopup="dialog"
+            title="Send a suggestion, report a result mismatch, or flag a bug">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M12 7v4M12 14h.01"/></svg>
+      <span class="st-label">Suggest</span>
+    </button>
     <a class="xlink" href="https://ttnn-eltwise-performance.aswincloud.com/" target="_blank" rel="noopener"
        title="Open the TTNN Eltwise Performance Tracker (opens in a new tab)">
       <svg class="xi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -372,6 +458,68 @@ footer a{color:var(--dim);text-decoration:none;border-bottom:1px dotted #3a4d6e}
 </div>
 
 <div id="tip" role="tooltip"></div>
+
+<!-- Suggestions / feedback modal -->
+<div class="modal-overlay" id="suggestOverlay" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="suggestTitle">
+    <button class="modal-x" id="suggestClose" type="button" aria-label="Close">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+    </button>
+    <div class="modal-head">
+      <div class="modal-ico">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M12 7v4M12 14h.01"/></svg>
+      </div>
+      <div>
+        <h2 id="suggestTitle">Suggestions &amp; feedback</h2>
+        <p class="modal-sub">Spotted a result that's wrong — e.g. an op marked <b>failed</b> that actually works? Have an idea? Tell us; it goes straight to the maintainer.</p>
+      </div>
+    </div>
+
+    <form id="suggestForm" novalidate>
+      <label class="fld">
+        <span class="fl">What kind of feedback?</span>
+        <select id="sgType" class="inp" required>
+          <option value="mismatch">Result mismatch — wrongly marked pass/fail</option>
+          <option value="suggestion">Suggestion / improvement</option>
+          <option value="bug">Bug / site issue</option>
+          <option value="other">Other</option>
+        </select>
+      </label>
+
+      <label class="fld" id="opField">
+        <span class="fl">Operation <span class="opt">(optional)</span></span>
+        <input id="sgOp" class="inp mono" type="text" maxlength="80" placeholder="e.g. abs, add, prod, silu_bw" autocomplete="off">
+        <span class="fh">Which op does this concern? Helps us find it fast.</span>
+      </label>
+
+      <label class="fld">
+        <span class="fl">Message</span>
+        <textarea id="sgMsg" class="inp" rows="5" maxlength="4000" required
+          placeholder="What did you expect vs. what's shown? Steps to reproduce, config (dtype / layout / memory), or your idea…"></textarea>
+        <span class="fh"><span id="sgCount">0</span>/4000</span>
+      </label>
+
+      <label class="fld">
+        <span class="fl">Your email <span class="opt">(optional — only if you want a reply)</span></span>
+        <input id="sgEmail" class="inp mono" type="email" maxlength="200" placeholder="you@example.com" autocomplete="email">
+      </label>
+
+      <!-- honeypot: hidden from humans, bots tend to fill it -->
+      <input id="sgWebsite" class="hp" type="text" tabindex="-1" autocomplete="off" aria-hidden="true">
+
+      <div class="modal-foot">
+        <div class="form-msg" id="sgFormMsg" role="status" aria-live="polite"></div>
+        <div class="modal-actions">
+          <button type="button" class="btn-ghost" id="suggestCancel">Cancel</button>
+          <button type="submit" class="btn-primary" id="sgSubmit">
+            <span class="bp-label">Send feedback</span>
+            <svg class="bp-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M21 12a9 9 0 1 1-6.2-8.5" stroke-linecap="round"/></svg>
+          </button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
 
 <script src="data.js"></script>
 <script src="app.js"></script>

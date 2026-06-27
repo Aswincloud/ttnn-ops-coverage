@@ -472,6 +472,92 @@ addEventListener('keydown',e=>{
   if(e.key==='Escape'){ $('#search').blur(); if(state.solo){state.solo=null;state.active=new Set(ORDER);renderChips();renderTable();} }
 });
 
+/* =========================================================
+   SUGGESTIONS / FEEDBACK MODAL
+========================================================= */
+(function feedback(){
+  const overlay=$('#suggestOverlay'), form=$('#suggestForm');
+  if(!overlay||!form) return;
+  const openBtn=$('#suggestOpen'), closeEls=[$('#suggestClose'),$('#suggestCancel')];
+  const typeSel=$('#sgType'), msg=$('#sgMsg'), count=$('#sgCount'), opF=$('#sgOp'), opField=$('#opField');
+  const email=$('#sgEmail'), website=$('#sgWebsite'), submit=$('#sgSubmit'), formMsg=$('#sgFormMsg');
+  let lastFocus=null;
+
+  const setMsg=(t,cls='')=>{ formMsg.textContent=t; formMsg.className='form-msg'+(cls?' '+cls:''); };
+
+  function open(){
+    lastFocus=document.activeElement;
+    overlay.hidden=false;
+    document.body.style.overflow='hidden';
+    setMsg('');
+    // op field is most relevant for mismatch/bug; keep visible but hint
+    setTimeout(()=>typeSel.focus(),40);
+    addEventListener('keydown',onKey);
+  }
+  function close(){
+    overlay.hidden=true;
+    document.body.style.overflow='';
+    removeEventListener('keydown',onKey);
+    if(lastFocus&&lastFocus.focus) lastFocus.focus();
+  }
+  function onKey(e){
+    if(e.key==='Escape'){ e.preventDefault(); close(); }
+    if(e.key==='Tab') trapTab(e);
+  }
+  function trapTab(e){
+    const f=overlay.querySelectorAll('button,input,select,textarea,a[href]');
+    const vis=[...f].filter(el=>!el.disabled&&el.offsetParent!==null);
+    if(!vis.length) return;
+    const first=vis[0], last=vis[vis.length-1];
+    if(e.shiftKey&&document.activeElement===first){ e.preventDefault(); last.focus(); }
+    else if(!e.shiftKey&&document.activeElement===last){ e.preventDefault(); first.focus(); }
+  }
+
+  openBtn&&openBtn.addEventListener('click',open);
+  closeEls.forEach(el=>el&&el.addEventListener('click',close));
+  overlay.addEventListener('mousedown',e=>{ if(e.target===overlay) close(); });
+
+  msg.addEventListener('input',()=>{ count.textContent=msg.value.length; });
+
+  // pre-fill op if a single op row is open in the table, as a nicety
+  function suggestedOp(){
+    const open=[...state.open]; return open.length===1?open[0]:'';
+  }
+  openBtn&&openBtn.addEventListener('click',()=>{ if(!opF.value){ const s=suggestedOp(); if(s) opF.value=s; } });
+
+  form.addEventListener('submit',async e=>{
+    e.preventDefault();
+    const message=msg.value.trim();
+    if(message.length<3){ setMsg('Please enter a message.','err'); msg.focus(); return; }
+    const em=email.value.trim();
+    if(em && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)){ setMsg('That email looks invalid.','err'); email.focus(); return; }
+
+    submit.disabled=true; submit.classList.add('loading'); setMsg('Sending…');
+    const payload={
+      type:typeSel.value, op:opF.value.trim(), message, email:em,
+      website:website.value,                       // honeypot
+      page:location.href.slice(0,300),
+    };
+    try{
+      const res=await fetch('/api/feedback',{
+        method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify(payload),
+      });
+      const data=await res.json().catch(()=>({}));
+      if(res.ok&&data.ok){
+        setMsg('✓ Thank you — sent!','ok');
+        form.reset(); count.textContent='0';
+        setTimeout(close,1100);
+      }else{
+        setMsg(data.error||'Something went wrong. Please try again.','err');
+      }
+    }catch{
+      setMsg('Network error — please try again.','err');
+    }finally{
+      submit.disabled=false; submit.classList.remove('loading');
+    }
+  });
+})();
+
 /* ---- sticky header: publish its height so the table's sticky <thead>
    pins just below it instead of overlapping (header wraps at breakpoints,
    so re-measure on resize). ---- */
