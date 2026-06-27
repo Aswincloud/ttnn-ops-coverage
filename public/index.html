@@ -280,12 +280,17 @@ select.inp{cursor:pointer;appearance:none;background-image:url("data:image/svg+x
 /* ---------- table ---------- */
 .tablecard{padding:0;overflow:hidden}
 .tscroll{overflow-x:auto;overflow-y:hidden}
-table{width:100%;border-collapse:collapse;font-size:13px}
+/* separate (not collapse) so sticky thead cells own a solid bg and rows can't
+   bleed through the seam during scroll; border-spacing:0 keeps it visually flush */
+table{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
 thead th{
-  position:sticky;top:var(--head-h,84px);background:#0d1626;z-index:2;text-align:left;
+  position:sticky;top:var(--head-h,84px);background:#0d1626;z-index:20;text-align:left;
   font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);font-weight:600;
-  padding:12px 14px;border-bottom:1px solid var(--border);white-space:nowrap;cursor:pointer;user-select:none;
+  padding:12px 14px;white-space:nowrap;cursor:pointer;user-select:none;
   transition:color var(--t);
+  /* border-collapse + sticky lets rows bleed through the seam; paint a solid
+     bg + a bottom edge via box-shadow (a real border isn't reliable here). */
+  box-shadow:inset 0 -1px 0 var(--border), 0 1px 0 var(--border);
 }
 thead th:hover{color:var(--text)}
 thead th .ar{opacity:0;font-size:9px;margin-left:4px;transition:opacity var(--t)}
