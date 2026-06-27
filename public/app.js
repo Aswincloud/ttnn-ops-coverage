@@ -1,0 +1,440 @@
+/* TTNN Ops Dashboard — self-contained renderer (no deps) */
+(function(){
+"use strict";
+const D = window.DASH;
+const $ = (s,p=document)=>p.querySelector(s);
+const $$ = (s,p=document)=>[...p.querySelectorAll(s)];
+const fmt = n => n.toLocaleString('en-US');
+const pct = (n,d)=> d? (100*n/d):0;
+
+/* ---- status meta ---- */
+const SMETA = {
+  PASS:       {c:'#10b981', label:'Pass',          short:'PASS'},
+  PCC_FAIL:   {c:'#f59e0b', label:'PCC Fail',       short:'PCC'},
+  ERROR:      {c:'#ef4444', label:'Hard Error',     short:'ERR'},
+  NO_GOLDEN:  {c:'#38bdf8', label:'No Golden Ref',  short:'NOGOLD'},
+  SKIP:       {c:'#64748b', label:'Skipped',        short:'SKIP'},
+  NOT_IN_TTNN:{c:'#475569', label:'Not in TTNN',    short:'N/A'},
+};
+const ORDER = ['PASS','PCC_FAIL','ERROR','NO_GOLDEN','SKIP','NOT_IN_TTNN'];
+
+/* ---- tooltip ---- */
+const tip = $('#tip');
+function showTip(html, e){
+  tip.innerHTML = html; tip.style.opacity='1';
+  moveTip(e);
+}
+function moveTip(e){
+  const pad=14, w=tip.offsetWidth, h=tip.offsetHeight;
+  let x=e.clientX+pad, y=e.clientY+pad;
+  if(x+w>innerWidth-8) x=e.clientX-w-pad;
+  if(y+h>innerHeight-8) y=e.clientY-h-pad;
+  tip.style.left=x+'px'; tip.style.top=y+'px';
+}
+function hideTip(){ tip.style.opacity='0'; }
+function tipHead(status, txt){
+  const m=SMETA[status];
+  return `<div class="t-h"><span class="sw" style="background:${m.c}"></span>${txt||m.label}</div>`;
+}
+
+/* =========================================================
+   META + KPIs
+========================================================= */
+function renderMeta(){
+  const m=D.meta, sc=D.statusCounts;
+  $('#meta').innerHTML =
+    `<b>${fmt(m.total)}</b> configs`+
+    `<span class="dotsep"></span><b>${m.ops}</b> ops`+
+    `<span class="dotsep"></span>${m.dtypes.length} dtypes × ${m.layouts.length} layouts × ${m.mems.length} mem`+
+    `<span class="dotsep"></span>generated ${m.generated}`;
+  $('#footMeta').textContent = `${fmt(m.total)} configurations across ${m.ops} operations · generated ${m.generated}`;
+
+  const runnable = m.total - sc.SKIP - sc.NOT_IN_TTNN;
+  const verifiable = sc.PASS + sc.PCC_FAIL;       // had a golden ref to compare
+  const passRate = pct(sc.PASS, verifiable);
+  const cards = [
+    {cls:'k-pass',  lab:'Pass Rate', ico:'check', val:passRate.toFixed(1)+'%',
+      meta:`${fmt(sc.PASS)} of ${fmt(verifiable)} verifiable`, color:'#10b981'},
+    {cls:'k-err',   lab:'Hard Errors', ico:'alert', val:fmt(sc.ERROR),
+      meta:`${pct(sc.ERROR,m.total).toFixed(1)}% of all configs`, color:'#ef4444'},
+    {cls:'k-pcc',   lab:'PCC Failures', ico:'wave', val:fmt(sc.PCC_FAIL),
+      meta:'ran but inaccurate', color:'#f59e0b'},
+    {cls:'k-nogold',lab:'No Golden', ico:'eye', val:fmt(sc.NO_GOLDEN),
+      meta:'unverifiable output', color:'#38bdf8'},
+    {cls:'k-ops',   lab:'Operations', ico:'grid', val:fmt(m.ops),
+      meta:`${fmt(runnable)} runnable configs`, color:'#3b82f6'},
+    {cls:'k-total', lab:'Total Configs', ico:'layers', val:fmt(m.total),
+      meta:`${m.dtypes.length}×${m.layouts.length}×${m.mems.length} sweep`, color:'#a78bfa'},
+  ];
+  const ICO={
+    check:'<path d="M20 6 9 17l-5-5"/>',
+    alert:'<path d="M10.3 3.3 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.3a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/>',
+    wave:'<path d="M2 12c2-4 4-4 6 0s4 4 6 0 4-4 6 0"/>',
+    eye:'<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="2.5"/>',
+    grid:'<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>',
+    layers:'<path d="m12 2 9 5-9 5-9-5 9-5Z"/><path d="m3 12 9 5 9-5M3 17l9 5 9-5"/>'
+  };
+  $('#kpis').innerHTML = cards.map(c=>`
+    <div class="kpi ${c.cls}" style="--accent-2:${c.color}">
+      <div class="lab"><svg viewBox="0 0 24 24" fill="none" stroke="${c.color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICO[c.ico]}</svg>${c.lab}</div>
+      <div class="val" style="color:${c.color==='#a78bfa'||c.color==='#3b82f6'?'var(--text)':c.color}">${c.val}</div>
+      <div class="meta">${c.meta}</div>
+    </div>`).join('');
+}
+
+/* =========================================================
+   DONUT (SVG arcs)
+========================================================= */
+function arc(cx,cy,r,a0,a1){
+  const p=(a)=>[cx+r*Math.cos(a), cy+r*Math.sin(a)];
+  const [x0,y0]=p(a0),[x1,y1]=p(a1);
+  const large = (a1-a0)>Math.PI?1:0;
+  return `M ${x0} ${y0} A ${r} ${r} 0 ${large} 1 ${x1} ${y1}`;
+}
+function renderDonut(){
+  const sc=D.statusCounts, total=D.meta.total;
+  $('#donutTotal').textContent=fmt(total);
+  const size=190, cx=size/2, cy=size/2, r=72, sw=24;
+  let a=-Math.PI/2; const gap=0.018;
+  let paths='';
+  ORDER.forEach(s=>{
+    const v=sc[s]; if(!v) return;
+    const frac=v/total, a1=a+frac*2*Math.PI;
+    const aa0=a+gap/2, aa1=Math.max(a1-gap/2,aa0+0.001);
+    paths+=`<path d="${arc(cx,cy,r,aa0,aa1)}" stroke="${SMETA[s].c}" stroke-width="${sw}" fill="none" stroke-linecap="round" data-s="${s}"/>`;
+    a=a1;
+  });
+  $('#donut').innerHTML=`
+    <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+      <circle cx="${cx}" cy="${cy}" r="${r}" stroke="#0e1626" stroke-width="${sw}" fill="none"/>
+      ${paths}
+    </svg>
+    <div class="center">
+      <div class="big">${fmt(total)}</div>
+      <div class="small">tests run</div>
+    </div>`;
+  $$('#donut path').forEach(p=>{
+    const s=p.dataset.s, v=sc[s];
+    p.addEventListener('mousemove',e=>showTip(tipHead(s)+`<div class="t-r"><b>${fmt(v)}</b> configs · <b>${pct(v,total).toFixed(1)}%</b></div>`,e));
+    p.addEventListener('mouseleave',hideTip);
+    p.addEventListener('click',()=>soloStatus(s));
+  });
+
+  // legend
+  $('#legend').innerHTML=ORDER.map(s=>{
+    const v=sc[s]; if(!v) return '';
+    return `<div class="lg-item" data-s="${s}">
+      <span class="sw" style="background:${SMETA[s].c}"></span>
+      <span class="nm">${SMETA[s].label}</span>
+      <span class="ct tnum">${fmt(v)}</span>
+      <span class="pc">${pct(v,total).toFixed(1)}%</span>
+    </div>`;}).join('');
+  $$('#legend .lg-item').forEach(el=>el.addEventListener('click',()=>soloStatus(el.dataset.s)));
+}
+
+/* =========================================================
+   DIMENSION STACKED BARS  (dtype / layout / mem)
+========================================================= */
+function dimBlock(title, sub, arr){
+  let html=`<div style="margin-bottom:6px"><div style="font-size:11.5px;font-weight:600;color:var(--dim);text-transform:uppercase;letter-spacing:.05em">${title}</div>`;
+  if(sub) html+=`<div style="font-size:10.5px;color:var(--faint);margin-bottom:9px">${sub}</div>`;
+  arr.forEach(row=>{
+    const tot=row.total;
+    let segs='';
+    ORDER.forEach(s=>{
+      const v=row[s]; if(!v) return;
+      segs+=`<i style="width:${pct(v,tot)}%;background:${SMETA[s].c}" data-s="${s}" data-v="${v}" data-tot="${tot}" data-dim="${row.value}"></i>`;
+    });
+    const verif=row.PASS+row.PCC_FAIL;
+    const pr= verif? pct(row.PASS,verif):0;
+    html+=`<div class="sbar-row">
+      <span class="sbar-lab" title="${row.value}">${row.value}</span>
+      <div class="sbar">${segs}</div>
+      <span class="sbar-pct" style="color:${pr>=66?'var(--pass)':pr>=33?'var(--pcc)':'var(--err)'}">${pr.toFixed(0)}%</span>
+    </div>`;
+  });
+  html+='</div>';
+  return html;
+}
+function renderDims(){
+  const c=$('#dims'); c.style.gridTemplateColumns='1fr';
+  c.innerHTML =
+    dimBlock('Data Type','pass-rate of verifiable configs per dtype', D.dims.dtype)+
+    `<div style="height:14px"></div>`+
+    dimBlock('Tensor Layout','tile vs row-major', D.dims.layout)+
+    `<div style="height:14px"></div>`+
+    dimBlock('Memory','dram vs l1', D.dims.mem);
+  $$('#dims .sbar i').forEach(seg=>{
+    const s=seg.dataset.s;
+    seg.addEventListener('mousemove',e=>showTip(
+      tipHead(s)+`<div class="t-r"><b>${seg.dataset.dim}</b> · ${SMETA[s].label}<br><b>${fmt(+seg.dataset.v)}</b> of ${fmt(+seg.dataset.tot)} · <b>${pct(+seg.dataset.v,+seg.dataset.tot).toFixed(1)}%</b></div>`,e));
+    seg.addEventListener('mouseleave',hideTip);
+  });
+}
+
+/* =========================================================
+   ERROR FAMILIES
+========================================================= */
+function renderErr(){
+  const fams=D.errFamilies, max=fams[0]?fams[0].count:1;
+  $('#errTotal').textContent=fmt(D.statusCounts.ERROR);
+  $('#efam').innerHTML=fams.map(f=>{
+    const nm=f.sig.replace(/^(TT_FATAL|TT_THROW)\s+/, m=>m);
+    const msg=(f.sample.split('—')[1]||'').trim();
+    return `<div class="efam-row">
+      <div class="efam-top">
+        <span class="efam-name" title="${f.sample.replace(/"/g,'&quot;')}">${nm}</span>
+        <span class="efam-ct tnum">${f.count}</span>
+      </div>
+      <div class="efam-bar"><i style="width:${pct(f.count,max)}%"></i></div>
+      ${msg?`<div class="efam-msg">${msg}</div>`:''}
+    </div>`;
+  }).join('');
+}
+
+/* =========================================================
+   COVERAGE SNAPSHOT (mini horizontal split bars)
+========================================================= */
+function renderSnapshot(){
+  const sc=D.statusCounts, total=D.meta.total;
+  $('#snapTotal').textContent=fmt(total);
+  const verif=sc.PASS+sc.PCC_FAIL;
+  const rows=[
+    {lab:'Verifiable & correct', v:sc.PASS, of:total, c:SMETA.PASS.c},
+    {lab:'Ran but inaccurate', v:sc.PCC_FAIL, of:total, c:SMETA.PCC_FAIL.c},
+    {lab:'Crashed before result', v:sc.ERROR, of:total, c:SMETA.ERROR.c},
+    {lab:'No reference to check', v:sc.NO_GOLDEN, of:total, c:SMETA.NO_GOLDEN.c},
+    {lab:'Skipped / unsupported', v:sc.SKIP+sc.NOT_IN_TTNN, of:total, c:SMETA.SKIP.c},
+  ];
+  $('#snapshot').innerHTML=rows.map(r=>`
+    <div>
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px">
+        <span style="font-size:12px;color:var(--dim)">${r.lab}</span>
+        <span class="mono tnum" style="font-size:12.5px;font-weight:600">${fmt(r.v)} <span style="color:var(--faint);font-weight:400">· ${pct(r.v,r.of).toFixed(1)}%</span></span>
+      </div>
+      <div style="height:9px;border-radius:5px;background:#0a1120;overflow:hidden;border:1px solid #18263f">
+        <i style="display:block;height:100%;width:${pct(r.v,r.of)}%;background:${r.c};border-radius:5px;transition:width 700ms cubic-bezier(.4,0,.2,1)"></i>
+      </div>
+    </div>`).join('');
+}
+
+/* =========================================================
+   LEADERBOARD TABLE  (sort / filter / drill-down)
+========================================================= */
+const state = {
+  q:'', sort:'passRate', dir:1,
+  active:new Set(ORDER),         // which statuses are "on"
+  solo:null,                     // soloed status or null
+  open:new Set(),                // expanded op rows
+};
+const COLS=[
+  {k:'op', label:'Operation', num:false},
+  {k:'composition', label:'Outcome Composition', num:false, nosort:true},
+  {k:'passRate', label:'Pass Rate', num:true},
+  {k:'PASS', label:'Pass', num:true},
+  {k:'PCC_FAIL', label:'PCC', num:true},
+  {k:'ERROR', label:'Err', num:true},
+  {k:'NO_GOLDEN', label:'NoGold', num:true},
+  {k:'SKIP', label:'Skip', num:true},
+  {k:'total', label:'Σ', num:true},
+];
+
+function renderChips(){
+  const sc=D.statusCounts;
+  $('#chips').innerHTML = ORDER.map(s=>{
+    const on=state.active.has(s), solo=state.solo===s;
+    return `<button class="chip ${on?'':'off'} ${solo?'solo':''}" data-s="${s}" aria-pressed="${on}" title="Click toggle · dbl-click solo">
+      <span class="sw" style="background:${SMETA[s].c}"></span>${SMETA[s].label}<span class="n">${fmt(sc[s])}</span>
+    </button>`;
+  }).join('');
+  $$('#chips .chip').forEach(ch=>{
+    let t=null;
+    ch.addEventListener('click',()=>{ // single = toggle (debounced vs dblclick)
+      clearTimeout(t); t=setTimeout(()=>toggleStatus(ch.dataset.s),200);
+    });
+    ch.addEventListener('dblclick',()=>{ clearTimeout(t); soloStatus(ch.dataset.s); });
+  });
+}
+function toggleStatus(s){
+  state.solo=null;
+  if(state.active.has(s)) state.active.delete(s); else state.active.add(s);
+  if(state.active.size===0) state.active=new Set(ORDER);
+  renderChips(); renderTable();
+}
+function soloStatus(s){
+  if(state.solo===s){ state.solo=null; state.active=new Set(ORDER); }
+  else { state.solo=s; state.active=new Set([s]); }
+  renderChips(); renderTable();
+  document.getElementById('tbl').scrollIntoView({behavior:'smooth',block:'start'});
+}
+
+function renderHead(){
+  $('#thead').innerHTML = COLS.map(c=>{
+    const sorted = state.sort===c.k;
+    return `<th class="${c.num?'num':''} ${sorted?'sorted':''}" data-k="${c.k}" ${c.nosort?'style="cursor:default"':''}>
+      ${c.label}${!c.nosort?`<span class="ar">${sorted?(state.dir<0?'▼':'▲'):'▲'}</span>`:''}
+    </th>`;
+  }).join('');
+  $$('#thead th').forEach(th=>{
+    const c=COLS.find(x=>x.k===th.dataset.k);
+    if(c.nosort) return;
+    th.addEventListener('click',()=>{
+      if(state.sort===c.k) state.dir*=-1;
+      else { state.sort=c.k; state.dir = c.k==='op'?1:-1; }
+      renderHead(); renderTable();
+    });
+  });
+}
+
+function prClass(pr){ return pr==null?'pr-na':pr>=0.85?'pr-hi':pr>=0.5?'pr-mid':'pr-lo'; }
+
+function compositionBar(o){
+  // bar reflects currently-active statuses only
+  const segs=ORDER.filter(s=>state.active.has(s)).map(s=>({s,v:o[s]})).filter(x=>x.v>0);
+  const tot=segs.reduce((a,b)=>a+b.v,0);
+  if(!tot) return `<div class="cellbar"><div class="track"></div><span class="pr pr-na">—</span></div>`;
+  const inner=segs.map(x=>`<i style="width:${pct(x.v,tot)}%;background:${SMETA[x.s].c}" title="${SMETA[x.s].label}: ${x.v}"></i>`).join('');
+  const verif=o.PASS+o.PCC_FAIL;
+  const pr= verif? o.PASS/verif : null;
+  const prTxt = pr==null?'—':(pr*100).toFixed(0)+'%';
+  return `<div class="cellbar"><div class="track">${inner}</div><span class="pr ${prClass(pr)}">${prTxt}</span></div>`;
+}
+
+function badge(v, kind){
+  if(!v) return `<span class="badge b0">0</span>`;
+  const cls = kind==='ERROR'?'b-err':kind==='PCC_FAIL'?'b-pcc':'';
+  return `<span class="badge ${cls}">${v}</span>`;
+}
+
+function filteredRows(){
+  let rows=D.opLeaderboard.slice();
+  const q=state.q.trim().toLowerCase();
+  if(q) rows=rows.filter(o=>o.op.toLowerCase().includes(q));
+  if(state.solo) rows=rows.filter(o=>o[state.solo]>0);
+  const k=state.sort, dir=state.dir;
+  rows.sort((a,b)=>{
+    if(k==='op') return dir*a.op.localeCompare(b.op);
+    let av=a[k], bv=b[k];
+    if(k==='passRate'){ av=av==null?-1:av; bv=bv==null?-1:bv; }
+    return dir*((av||0)-(bv||0));
+  });
+  return rows;
+}
+
+function renderTable(){
+  const rows=filteredRows();
+  $('#tableSub').innerHTML = `${rows.length} ops shown` +
+    (state.solo?` · soloing <b style="color:${SMETA[state.solo].c}">${SMETA[state.solo].label}</b>`:'') +
+    (state.q?` · matching “${state.q}”`:'');
+  const tb=$('#tbody');
+  if(!rows.length){ tb.innerHTML=''; $('#emptyState').hidden=false; return; }
+  $('#emptyState').hidden=true;
+
+  tb.innerHTML = rows.map(o=>{
+    const open=state.open.has(o.op);
+    return `<tr class="op-row ${open?'open':''}" data-op="${o.op}">
+      <td><span class="opname"><svg class="tw" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>${o.op}</span></td>
+      <td>${compositionBar(o)}</td>
+      <td class="num ${prClass(o.passRate)}">${o.passRate==null?'—':(o.passRate*100).toFixed(1)+'%'}</td>
+      <td class="num" style="color:var(--pass)">${o.PASS||'<span class="b0">0</span>'}</td>
+      <td class="num">${badge(o.PCC_FAIL,'PCC_FAIL')}</td>
+      <td class="num">${badge(o.ERROR,'ERROR')}</td>
+      <td class="num" style="color:var(--nogold)">${o.NO_GOLDEN||'<span class="b0">0</span>'}</td>
+      <td class="num" style="color:var(--faint)">${o.SKIP||'<span class="b0">0</span>'}</td>
+      <td class="num mono" style="color:var(--dim)">${o.total}</td>
+    </tr>` + (open?detailRow(o.op):'');
+  }).join('');
+
+  $$('#tbody tr.op-row').forEach(tr=>{
+    tr.addEventListener('click',()=>{
+      const op=tr.dataset.op;
+      if(state.open.has(op)) state.open.delete(op); else state.open.add(op);
+      renderTable();
+    });
+  });
+  // composition bar tooltips
+  $$('#tbody .cellbar .track i').forEach(i=>{
+    i.addEventListener('mousemove',e=>showTip(`<div class="t-r">${i.title}</div>`,e));
+    i.addEventListener('mouseleave',hideTip);
+  });
+  bindMatrix();
+}
+
+/* ---- per-op drill-down: dtype × (layout∙mem) matrix ---- */
+function buildMatrix(op){
+  // collect this op's rows
+  const opi=D.ops.indexOf(op);
+  const dts=D.meta.dtypes, lys=D.meta.layouts, mems=D.meta.mems;
+  const cols=[]; lys.forEach(l=>mems.forEach(m=>cols.push({l,m,key:l+'·'+m})));
+  // map[dt][col] = {status, reason}
+  const map={}; dts.forEach(d=>map[d]={});
+  for(const r of D.rows){
+    if(r[0]!==opi) continue;
+    const dt=D.dts[r[1]], ly=D.lys[r[2]], mem=D.mems[r[3]];
+    if(dt==='-'||ly==='-'||mem==='-') continue;
+    map[dt][ly+'·'+mem]={status:D.statusList[r[4]], reason:D.reasons[r[5]]};
+  }
+  return {dts,cols,map};
+}
+function detailRow(op){
+  const {dts,cols,map}=buildMatrix(op);
+  const o=D.opLeaderboard.find(x=>x.op===op);
+  const colW=`minmax(56px,1fr)`;
+  let grid=`grid-template-columns:96px repeat(${cols.length},${colW})`;
+  let cells=`<div class="mtx-corner" style="grid-column:1;writing-mode:vertical">dtype ↓ / layout·mem →</div>`;
+  cells+=cols.map(c=>`<div class="mtx-colh">${c.l}·${c.m}</div>`).join('');
+  dts.forEach(dt=>{
+    cells+=`<div class="mtx-rowh">${dt}</div>`;
+    cols.forEach(c=>{
+      const cell=map[dt][c.key];
+      if(!cell){ cells+=`<div class="cell c-empty"></div>`; return; }
+      const m=SMETA[cell.status];
+      const dark = cell.status==='SKIP'||cell.status==='NOT_IN_TTNN';
+      cells+=`<div class="cell" style="background:${m.c};color:${dark?'#cdd8ea':'#0a0e16'}" data-status="${cell.status}" data-dt="${dt}" data-cfg="${c.l}·${c.m}" data-reason="${(cell.reason||'').replace(/"/g,'&quot;')}">${m.short[0]}</div>`;
+    });
+  });
+  return `<tr class="detail"><td colspan="${COLS.length}"><div class="detail-inner">
+    <div class="matrix-title">
+      <b>${op}</b> configuration matrix
+      <span class="dotsep"></span> ${o.total} configs
+      <span class="dotsep"></span> hover a cell for the exact result
+    </div>
+    <div class="mtx" style="${grid}">${cells}</div>
+  </div></td></tr>`;
+}
+function bindMatrix(){
+  $$('#tbody .cell:not(.c-empty)').forEach(c=>{
+    c.addEventListener('mousemove',e=>{
+      const s=c.dataset.status, m=SMETA[s];
+      let reason=c.dataset.reason||'';
+      if(reason.length>240) reason=reason.slice(0,240)+'…';
+      showTip(tipHead(s)+
+        `<div class="t-r"><b>${c.dataset.dt}</b> · ${c.dataset.cfg}<br>`+
+        (reason?reason.replace(/</g,'&lt;'):m.label)+`</div>`,e);
+    });
+    c.addEventListener('mouseleave',hideTip);
+  });
+}
+
+/* ---- search ---- */
+let stim=null;
+$('#search').addEventListener('input',e=>{
+  clearTimeout(stim);
+  stim=setTimeout(()=>{ state.q=e.target.value; renderTable(); },120);
+});
+document.addEventListener('mousemove',e=>{ if(tip.style.opacity==='1') moveTip(e); });
+addEventListener('keydown',e=>{
+  if(e.key==='/'&&document.activeElement!==$('#search')){ e.preventDefault(); $('#search').focus(); }
+  if(e.key==='Escape'){ $('#search').blur(); if(state.solo){state.solo=null;state.active=new Set(ORDER);renderChips();renderTable();} }
+});
+
+/* ---- boot ---- */
+renderMeta();
+renderDonut();
+renderDims();
+renderErr();
+renderSnapshot();
+renderChips();
+renderHead();
+renderTable();
+})();

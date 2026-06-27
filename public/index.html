@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TTNN Ops Matrix — Test Coverage Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Fira+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0a0e16; --bg-grad-1:#0c1220; --bg-grad-2:#080b12;
+  --surface:#10172300; --card:#111a2b; --card-2:#0e1626; --card-hi:#16213408;
+  --border:#1e2a3f; --border-hi:#2a3a55;
+  --text:#e7eef9; --dim:#93a4c0; --faint:#5d6f8e;
+  --primary:#3b82f6; --primary-hi:#60a5fa; --accent:#f59e0b; --accent-hi:#fbbf24;
+  --pass:#10b981; --pcc:#f59e0b; --err:#ef4444; --nogold:#38bdf8; --skip:#64748b; --noop:#475569;
+  --pass-d:#10b98122; --pcc-d:#f59e0b22; --err-d:#ef444422;
+  --mono:'Fira Code',ui-monospace,'SF Mono',Menlo,Consolas,monospace;
+  --sans:'Fira Sans',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  --r:14px; --r-sm:9px; --r-xs:6px;
+  --sh:0 1px 0 #ffffff08 inset, 0 18px 40px -24px #000000cc;
+  --sh-hi:0 1px 0 #ffffff12 inset, 0 24px 50px -22px #000000ee;
+  --t:200ms cubic-bezier(.4,0,.2,1);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-text-size-adjust:100%}
+body{
+  font-family:var(--sans); color:var(--text); line-height:1.5;
+  background:
+    radial-gradient(1200px 600px at 78% -8%, #15306022 0, transparent 60%),
+    radial-gradient(900px 500px at 8% 0%, #7c450f1a 0, transparent 55%),
+    linear-gradient(180deg,var(--bg-grad-1),var(--bg-grad-2));
+  background-attachment:fixed; min-height:100dvh;
+  -webkit-font-smoothing:antialiased; font-feature-settings:"tnum" 1,"cv05" 1;
+}
+.tnum{font-variant-numeric:tabular-nums}
+.mono{font-family:var(--mono)}
+.wrap{max-width:1480px;margin:0 auto;padding:26px 22px 80px}
+a{color:inherit}
+
+/* ---------- header ---------- */
+header.top{display:flex;align-items:flex-start;gap:20px;flex-wrap:wrap;margin-bottom:22px}
+.brand{display:flex;align-items:center;gap:14px;min-width:0}
+.logo{
+  width:46px;height:46px;border-radius:12px;flex:none;display:grid;place-items:center;
+  background:linear-gradient(150deg,#1e3a8a,#0b1d45);border:1px solid #2c4a8f55;
+  box-shadow:var(--sh),0 0 26px -6px #3b82f655;
+}
+.logo svg{width:26px;height:26px}
+.brand h1{font-size:21px;font-weight:700;letter-spacing:-.02em;line-height:1.1}
+.brand .sub{font-size:12.5px;color:var(--dim);margin-top:3px;display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.brand .sub b{color:var(--text);font-weight:600}
+.dotsep{width:3px;height:3px;border-radius:50%;background:var(--faint);display:inline-block}
+.spacer{flex:1}
+.searchbox{position:relative;flex:none}
+.searchbox svg{position:absolute;left:12px;top:50%;transform:translateY(-50%);width:16px;height:16px;color:var(--faint);pointer-events:none}
+#search{
+  font-family:var(--mono);font-size:13px;color:var(--text);width:240px;
+  background:var(--card-2);border:1px solid var(--border);border-radius:10px;
+  padding:10px 12px 10px 36px;transition:border-color var(--t),box-shadow var(--t),width var(--t);
+}
+#search::placeholder{color:var(--faint)}
+#search:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px #3b82f633;width:280px}
+
+/* ---------- kpi ---------- */
+.kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:13px;margin-bottom:18px}
+.kpi{
+  background:linear-gradient(165deg,var(--card),var(--card-2));
+  border:1px solid var(--border);border-radius:var(--r);padding:15px 16px 14px;
+  box-shadow:var(--sh);position:relative;overflow:hidden;transition:transform var(--t),border-color var(--t),box-shadow var(--t);
+}
+.kpi:hover{transform:translateY(-2px);border-color:var(--border-hi);box-shadow:var(--sh-hi)}
+.kpi::after{content:"";position:absolute;inset:0 0 auto 0;height:2px;background:var(--accent-2,#3b82f6);opacity:.85}
+.kpi.k-pass::after{background:linear-gradient(90deg,var(--pass),#34d39900)}
+.kpi.k-err::after{background:linear-gradient(90deg,var(--err),#ef444400)}
+.kpi.k-pcc::after{background:linear-gradient(90deg,var(--pcc),#f59e0b00)}
+.kpi.k-nogold::after{background:linear-gradient(90deg,var(--nogold),#38bdf800)}
+.kpi.k-ops::after{background:linear-gradient(90deg,var(--primary),#3b82f600)}
+.kpi.k-total::after{background:linear-gradient(90deg,#a78bfa,#a78bfa00)}
+.kpi .lab{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--dim);font-weight:600;display:flex;align-items:center;gap:6px}
+.kpi .lab svg{width:14px;height:14px;opacity:.8}
+.kpi .val{font-family:var(--mono);font-size:30px;font-weight:600;letter-spacing:-.02em;margin-top:7px;line-height:1}
+.kpi .meta{font-size:11.5px;color:var(--faint);margin-top:6px;font-family:var(--mono)}
+.kpi .meta .up{color:var(--pass)} .kpi .meta .dn{color:var(--err)}
+
+/* ---------- grid sections ---------- */
+.grid{display:grid;gap:14px}
+.row-charts{grid-template-columns:340px 1fr;align-items:stretch;margin-bottom:14px}
+.dims{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.panel{
+  background:linear-gradient(170deg,var(--card),var(--card-2));
+  border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--sh);
+  padding:16px 17px;display:flex;flex-direction:column;min-width:0;
+}
+.panel h2{font-size:13px;font-weight:600;letter-spacing:.01em;display:flex;align-items:center;gap:8px;margin-bottom:2px}
+.panel h2 .ico{width:15px;height:15px;color:var(--primary-hi);flex:none}
+.panel .ph-sub{font-size:11.5px;color:var(--faint);margin-bottom:13px}
+.panel.tall{grid-row:span 1}
+
+/* donut */
+.donut-wrap{display:flex;align-items:center;gap:14px;flex:1}
+.donut{position:relative;flex:none}
+.donut .center{position:absolute;inset:0;display:grid;place-content:center;text-align:center}
+.donut .center .big{font-family:var(--mono);font-size:25px;font-weight:600;line-height:1}
+.donut .center .small{font-size:10.5px;color:var(--dim);letter-spacing:.04em;text-transform:uppercase;margin-top:3px}
+.donut path{transition:opacity var(--t),transform var(--t);transform-origin:center;cursor:pointer}
+.donut path:hover{opacity:.82}
+.legend{display:flex;flex-direction:column;gap:7px;flex:1;min-width:0}
+.lg-item{display:flex;align-items:center;gap:9px;font-size:12.5px;cursor:pointer;padding:3px 5px;border-radius:7px;transition:background var(--t)}
+.lg-item:hover{background:#ffffff08}
+.lg-item .sw{width:10px;height:10px;border-radius:3px;flex:none}
+.lg-item .nm{color:var(--dim);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lg-item .ct{font-family:var(--mono);font-weight:600;color:var(--text)}
+.lg-item .pc{font-family:var(--mono);font-size:11px;color:var(--faint);width:42px;text-align:right}
+
+/* stacked horizontal bars for dims */
+.sbar-row{display:flex;align-items:center;gap:11px;margin-bottom:11px}
+.sbar-row:last-child{margin-bottom:0}
+.sbar-lab{font-family:var(--mono);font-size:12px;color:var(--dim);width:78px;flex:none;text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sbar{flex:1;height:22px;border-radius:7px;overflow:hidden;display:flex;background:#0a1120;border:1px solid #1a2740}
+.sbar i{height:100%;transition:filter var(--t);position:relative;cursor:pointer}
+.sbar i:hover{filter:brightness(1.18)}
+.sbar-pct{font-family:var(--mono);font-size:12px;font-weight:600;width:46px;flex:none;text-align:right}
+
+/* error families */
+.efam{display:flex;flex-direction:column;gap:9px}
+.efam-row{cursor:default}
+.efam-top{display:flex;align-items:baseline;gap:8px;margin-bottom:4px}
+.efam-name{font-family:var(--mono);font-size:11.5px;color:var(--text);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.efam-ct{font-family:var(--mono);font-size:12px;font-weight:600;color:var(--err);flex:none}
+.efam-bar{height:7px;border-radius:5px;background:#0a1120;overflow:hidden}
+.efam-bar i{display:block;height:100%;background:linear-gradient(90deg,#ef4444,#fb7185);border-radius:5px;transition:width 600ms cubic-bezier(.4,0,.2,1)}
+.efam-msg{font-size:11px;color:var(--faint);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* ---------- filter chips ---------- */
+.tablehead{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+.tablehead h2{margin:0}
+.chips{display:flex;gap:8px;flex-wrap:wrap}
+.chip{
+  font-family:var(--mono);font-size:11.5px;font-weight:500;color:var(--dim);
+  background:var(--card-2);border:1px solid var(--border);border-radius:999px;
+  padding:6px 11px 6px 9px;cursor:pointer;display:flex;align-items:center;gap:7px;
+  transition:all var(--t);user-select:none;
+}
+.chip:hover{border-color:var(--border-hi);color:var(--text)}
+.chip .sw{width:9px;height:9px;border-radius:3px;flex:none;transition:transform var(--t)}
+.chip.off{opacity:.42}
+.chip.off .sw{transform:scale(.6)}
+.chip.solo{border-color:var(--primary-hi);color:var(--text);box-shadow:0 0 0 2px #3b82f626}
+.chip .n{font-variant-numeric:tabular-nums;color:var(--faint)}
+.chip:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
+
+/* ---------- table ---------- */
+.tablecard{padding:0;overflow:hidden}
+.tscroll{overflow-x:auto;overflow-y:hidden}
+table{width:100%;border-collapse:collapse;font-size:13px}
+thead th{
+  position:sticky;top:0;background:#0d1626;z-index:2;text-align:left;
+  font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);font-weight:600;
+  padding:12px 14px;border-bottom:1px solid var(--border);white-space:nowrap;cursor:pointer;user-select:none;
+  transition:color var(--t);
+}
+thead th:hover{color:var(--text)}
+thead th .ar{opacity:0;font-size:9px;margin-left:4px;transition:opacity var(--t)}
+thead th.sorted .ar{opacity:1;color:var(--accent-hi)}
+thead th.num{text-align:right}
+tbody td{padding:0 14px;border-bottom:1px solid #16213466;vertical-align:middle;height:46px}
+tbody tr{transition:background var(--t)}
+tbody tr.op-row{cursor:pointer}
+tbody tr.op-row:hover{background:#16223a55}
+tbody tr.op-row.open{background:#17243e}
+.opname{font-family:var(--mono);font-weight:500;color:var(--text);display:flex;align-items:center;gap:9px}
+.opname .tw{width:13px;height:13px;color:var(--faint);transition:transform var(--t);flex:none}
+tr.op-row.open .opname .tw{transform:rotate(90deg);color:var(--primary-hi)}
+.num{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums}
+.cellbar{display:flex;align-items:center;gap:10px;min-width:190px}
+.cellbar .track{flex:1;height:16px;border-radius:5px;overflow:hidden;display:flex;background:#0a1120;border:1px solid #18263f}
+.cellbar .track i{height:100%}
+.cellbar .pr{font-family:var(--mono);font-size:12.5px;font-weight:600;width:50px;text-align:right;flex:none}
+.pr-hi{color:var(--pass)} .pr-mid{color:var(--pcc)} .pr-lo{color:var(--err)} .pr-na{color:var(--faint)}
+.badge{font-family:var(--mono);font-size:11.5px;font-weight:600;padding:2px 8px;border-radius:6px;display:inline-block;min-width:30px;text-align:center}
+.b0{color:var(--faint);background:transparent;font-weight:400}
+.b-err{color:#fca5a5;background:var(--err-d)}
+.b-pcc{color:#fcd34d;background:var(--pcc-d)}
+
+/* drill-down matrix */
+tr.detail td{padding:0;border-bottom:1px solid var(--border)}
+.detail-inner{padding:16px 18px 20px;background:#0b1322;animation:slidein 260ms cubic-bezier(.4,0,.2,1)}
+@keyframes slidein{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+.matrix-title{font-size:11.5px;color:var(--dim);margin-bottom:11px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.matrix-title b{color:var(--text);font-family:var(--mono)}
+.mtx{display:grid;gap:5px;overflow-x:auto;padding-bottom:4px}
+.mtx-corner{font-size:10px;color:var(--faint);display:flex;align-items:flex-end}
+.mtx-colh{font-family:var(--mono);font-size:10.5px;color:var(--dim);text-align:center;padding:2px 0;white-space:nowrap}
+.mtx-rowh{font-family:var(--mono);font-size:11px;color:var(--dim);display:flex;align-items:center;padding-right:8px;white-space:nowrap}
+.cell{
+  height:26px;border-radius:5px;display:grid;place-items:center;font-family:var(--mono);font-size:10px;font-weight:600;
+  color:#0a0e16;cursor:default;position:relative;transition:transform var(--t),box-shadow var(--t);border:1px solid #ffffff10;
+}
+.cell:hover{transform:scale(1.12);box-shadow:0 6px 16px -6px #000c,0 0 0 1px #ffffff30;z-index:3}
+.cell.c-empty{background:#0e1626;border:1px dashed #21314c;cursor:default}
+
+/* tooltip */
+#tip{
+  position:fixed;z-index:9999;pointer-events:none;opacity:0;transition:opacity 120ms;
+  background:#0a1322f2;border:1px solid var(--border-hi);border-radius:9px;padding:9px 11px;
+  font-size:12px;max-width:340px;box-shadow:0 16px 40px -12px #000e;backdrop-filter:blur(8px);
+}
+#tip .t-h{font-family:var(--mono);font-size:11.5px;font-weight:600;margin-bottom:4px;display:flex;align-items:center;gap:7px}
+#tip .t-h .sw{width:9px;height:9px;border-radius:3px}
+#tip .t-r{font-family:var(--mono);font-size:11px;color:var(--dim);white-space:pre-wrap;word-break:break-word}
+#tip .t-r b{color:var(--text)}
+
+.empty{padding:54px 20px;text-align:center;color:var(--faint);font-size:13.5px}
+.empty svg{width:38px;height:38px;opacity:.4;margin-bottom:10px}
+
+footer{margin-top:26px;text-align:center;color:var(--faint);font-size:11.5px;font-family:var(--mono)}
+footer a{color:var(--dim);text-decoration:none;border-bottom:1px dotted #3a4d6e}
+
+/* responsive */
+@media(max-width:1200px){.kpis{grid-template-columns:repeat(3,1fr)}.row-charts{grid-template-columns:1fr}.donut-wrap{justify-content:center}}
+@media(max-width:760px){
+  .wrap{padding:18px 13px 60px}.kpis{grid-template-columns:repeat(2,1fr)}.dims{grid-template-columns:1fr}
+  #search{width:100%}.searchbox{width:100%}.spacer{display:none}
+  .brand h1{font-size:18px}.kpi .val{font-size:25px}
+}
+@media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+:focus-visible{outline:2px solid var(--primary);outline-offset:2px;border-radius:4px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <div class="logo">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#cfe0ff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/>
+          <rect x="3" y="14" width="7" height="7" rx="1.5"/><path d="M14 17.5h7M17.5 14v7"/></svg>
+      </div>
+      <div>
+        <h1>TTNN Ops Coverage Matrix</h1>
+        <div class="sub" id="meta"></div>
+      </div>
+    </div>
+    <div class="spacer"></div>
+    <div class="searchbox">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+      <input id="search" type="search" placeholder="filter ops…  (e.g. add, _bw, prod)" autocomplete="off" aria-label="Filter operations">
+    </div>
+  </header>
+
+  <section class="kpis" id="kpis"></section>
+
+  <div class="grid row-charts">
+    <div class="panel" id="donutPanel">
+      <h2><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.2-8.5"/><path d="M21 12a9 9 0 0 0-9-9v9z"/></svg>Result Distribution</h2>
+      <div class="ph-sub">All <b id="donutTotal"></b> test configurations by outcome</div>
+      <div class="donut-wrap">
+        <div class="donut" id="donut"></div>
+        <div class="legend" id="legend"></div>
+      </div>
+    </div>
+    <div class="panel">
+      <h2><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><rect x="7" y="9" width="3" height="9"/><rect x="12" y="5" width="3" height="13"/><rect x="17" y="12" width="3" height="6"/></svg>Outcome by Configuration Axis</h2>
+      <div class="ph-sub">Pass / error composition across data type, tensor layout &amp; memory</div>
+      <div class="dims" id="dims" style="grid-template-columns:1fr"></div>
+    </div>
+  </div>
+
+  <div class="grid dims" style="grid-template-columns:1fr 1fr;margin-bottom:14px">
+    <div class="panel">
+      <h2><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.3 3.3 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.3a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/></svg>Top Hard-Error Signatures</h2>
+      <div class="ph-sub">Device assertion &amp; build failures (<b id="errTotal"></b> total), grouped by source location</div>
+      <div class="efam" id="efam"></div>
+    </div>
+    <div class="panel">
+      <h2><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Coverage Snapshot</h2>
+      <div class="ph-sub">How the <b id="snapTotal"></b> configs split between verifiable and unverifiable</div>
+      <div id="snapshot" style="display:flex;flex-direction:column;gap:10px;flex:1;justify-content:center"></div>
+    </div>
+  </div>
+
+  <div class="panel tablecard">
+    <div style="padding:16px 17px 0">
+      <div class="tablehead">
+        <h2><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h18v18H3z"/><path d="M3 9h18M3 15h18M9 3v18"/></svg>Operation Leaderboard</h2>
+        <span class="ph-sub" id="tableSub" style="margin:0"></span>
+        <div class="spacer" style="flex:1"></div>
+        <div class="chips" id="chips"></div>
+      </div>
+    </div>
+    <div class="tscroll">
+      <table id="tbl">
+        <thead><tr id="thead"></tr></thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+    <div class="empty" id="emptyState" hidden>
+      <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg></div>
+      No operations match your filter.
+    </div>
+  </div>
+
+  <footer>
+    TTNN Operations Test Matrix &nbsp;·&nbsp; <span id="footMeta"></span> &nbsp;·&nbsp; rendered client-side, no telemetry
+  </footer>
+</div>
+
+<div id="tip" role="tooltip"></div>
+
+<script src="data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

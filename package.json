@@ -1,0 +1,15 @@
+{
+  "name": "ttnn-ops-coverage",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Interactive coverage dashboard for the TTNN operation test matrix.",
+  "scripts": {
+    "build": "python3 process.py",
+    "dev": "wrangler dev",
+    "serve": "python3 -m http.server 8080 --bind 0.0.0.0 --directory public",
+    "deploy": "npm run build && wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.103.0"
+  }
+}

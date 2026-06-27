@@ -1,0 +1,17 @@
+{
+  // Cloudflare Workers — Static Assets deployment.
+  // Pure static site (no Worker script). `wrangler deploy` uploads ./public
+  // and serves it directly from Cloudflare's edge.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "ttnn-ops-coverage",
+  "compatibility_date": "2026-06-20",
+  "assets": {
+    "directory": "./public",
+    // index.html is the only route; clean URLs, no SPA rewrite needed.
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "404-page"
+  },
+  "observability": {
+    "enabled": true
+  }
+}
