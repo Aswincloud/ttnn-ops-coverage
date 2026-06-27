@@ -85,6 +85,20 @@ header.top{display:flex;align-items:flex-start;gap:20px;flex-wrap:wrap;margin-bo
 .updated .ut{display:flex;flex-direction:column;line-height:1.25}
 .updated .ul{font-size:9.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);font-weight:600}
 .updated .uv{font-family:var(--mono);font-size:12.5px;color:var(--text);font-weight:500;font-variant-numeric:tabular-nums}
+.xlink{
+  display:flex;align-items:center;gap:9px;flex:none;text-decoration:none;
+  background:var(--card-2);border:1px solid var(--border);border-radius:10px;
+  padding:7px 11px;transition:border-color var(--t),background var(--t),box-shadow var(--t),transform var(--t);
+}
+.xlink:hover{border-color:#5a4420;background:linear-gradient(165deg,#1a1408,var(--card-2));box-shadow:0 0 0 3px #f59e0b1a;transform:translateY(-1px)}
+.xlink .xi{width:16px;height:16px;color:var(--accent-hi);flex:none}
+.xlink .xt{display:flex;flex-direction:column;line-height:1.25;min-width:0}
+.xlink .xl{font-size:9.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);font-weight:600}
+.xlink .xv{font-size:12.5px;color:var(--text);font-weight:600;white-space:nowrap}
+.xlink .xo{width:13px;height:13px;color:var(--faint);flex:none;transition:transform var(--t),color var(--t)}
+.xlink:hover .xo{transform:translate(1.5px,-1.5px);color:var(--accent-hi)}
+.xlink:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+@media(max-width:760px){.xlink .xt{display:none}.xlink{padding:8px 9px}}
 
 /* ---------- kpi ---------- */
 .kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:13px;margin-bottom:18px}
@@ -267,6 +281,14 @@ footer a{color:var(--dim);text-decoration:none;border-bottom:1px dotted #3a4d6e}
       </div>
     </div>
     <div class="spacer"></div>
+    <a class="xlink" href="https://ttnn-eltwise-performance.aswincloud.com/" target="_blank" rel="noopener"
+       title="Open the TTNN Eltwise Performance Tracker (opens in a new tab)">
+      <svg class="xi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+      <span class="xt"><span class="xl">Related</span><span class="xv">Performance&nbsp;Tracker</span></span>
+      <svg class="xo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M7 17 17 7M9 7h8v8"/></svg>
+    </a>
     <div class="updated" id="updated" hidden title="">
       <span class="pulse" aria-hidden="true"></span>
       <span class="ut">
@@ -334,6 +356,8 @@ footer a{color:var(--dim);text-decoration:none;border-bottom:1px dotted #3a4d6e}
 
   <footer>
     TTNN Operations Test Matrix &nbsp;·&nbsp; <span id="footMeta"></span> &nbsp;·&nbsp; rendered client-side, no telemetry
+    <br>
+    see also &nbsp;<a href="https://ttnn-eltwise-performance.aswincloud.com/" target="_blank" rel="noopener">TTNN Eltwise Performance Tracker&nbsp;↗</a>
   </footer>
 </div>
 
