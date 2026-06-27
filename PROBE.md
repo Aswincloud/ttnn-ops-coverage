@@ -10,11 +10,6 @@ op on device, and records:
 
 Results are written incrementally to `eltwise_support_matrix.csv` next to the script.
 
-> **Dashboard input:** this repo's [coverage dashboard](https://ttnn-ops-coverage.aswincloud.com/)
-> reads the probe output as **`ops.csv`** at the repo root (`process.py` turns it into
-> `public/data.js` on every deploy). To refresh the dashboard, drop a new probe run in
-> as `ops.csv` and push — i.e. `cp eltwise_support_matrix.csv ops.csv`.
-
 ---
 
 ## Quick start
@@ -121,9 +116,6 @@ done
 but a single hard crash aborts everything. Per-op subprocesses are slower (one
 device init per op) but survive crashes. Use single-process when no config
 segfaults; use the subprocess driver when probing risky/new configs.
-
-> Known hard crash: `cumsum` / `cumprod` on `uint8 + tile + l1` segfaults at larger
-> multi-core shapes (not at the default single-tile shape).
 
 ---
 

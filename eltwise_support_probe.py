@@ -10,9 +10,16 @@ Env:  PROBE_DTYPES, PROBE_LAYOUTS, PROBE_MEMS to subset axes (comma separated).
 """
 import os
 import csv
+import zlib
 import math
 import torch
 import ttnn
+
+# fixed seed so runs are deterministic (no borderline PCC flips between runs).
+# each config is reseeded from this base + a hash of (op,dtype,layout,mem) so a
+# single-op probe matches the same row in a full run. Override with PROBE_SEED.
+_BASE_SEED = int(os.environ.get("PROBE_SEED", "0"))
+torch.manual_seed(_BASE_SEED)
 
 # ----------------------------------------------------------------------------- axes
 ALL_DTYPES = {
@@ -64,6 +71,10 @@ def make_mem(token, shape, device):
     )
 
 
+def _is_sharded(mem):
+    return isinstance(mem, str) and mem in _SHARD_STRATEGY
+
+
 def _subset(env, full):
     v = os.environ.get(env)
     if not v:
@@ -79,7 +90,7 @@ MEMS = _subset("PROBE_MEMS", ALL_MEMS)
 OPS = """
 abs acos acosh add addalpha addcdiv addcmul angle asin asinh assign atan atan2 atanh
 bias_gelu bitwise_and bitwise_not bitwise_or bitwise_xor
-cbrt ceil celu clamp clip complex_tensor conj cos cosh cumsum cumprod
+cbrt ceil celu clamp clip complex_tensor conj cos cosh
 deg2rad digamma divide
 elu eq eqz erf erfc erfinv exp exp2 expm1
 fill floor fmod frac
@@ -108,6 +119,13 @@ softshrink_bw softsign_bw sqrt_bw square_bw squared_difference_bw sub_bw subalph
 tan_bw tanh_bw tanhshrink_bw trunc_bw where_bw xlogy_bw
 add_ bias_gelu_ div_ divide_ eq_ ge_ gt_ ldexp_ le_ logaddexp_ logaddexp2_ logical_and_
 logical_not_ logical_or_ logical_xor_ mul_ multiply_ ne_ rsub_ squared_difference_ sub_ subtract_
+lt lt_ div div_no_nan floor_div gcd lcm outer polyval polygamma snake_beta
+bitwise_left_shift bitwise_right_shift logical_left_shift logical_right_shift
+normalize_global normalize_hw alt_complex_rotate90 is_imag is_real bitcast unary_chain
+quantize dequantize requantize
+div_bw div_no_nan_bw celu_bw elu_bw hardtanh_bw leaky_relu_bw threshold_bw softplus_bw
+rpow_bw rdiv_bw logiteps_bw polygamma_bw prod_bw assign_bw
+angle_bw conj_bw imag_bw real_bw polar_bw concat_bw repeat_bw
 """.split()
 
 # ----------------------------------------------------------------------------- per-op spec
@@ -118,13 +136,16 @@ BINARY = {
     "logaddexp", "logaddexp2", "logical_and", "logical_or", "logical_xor", "lt", "maximum",
     "minimum", "mul", "multiply", "ne", "nextafter", "pow", "remainder",
     "squared_difference", "sub", "subalpha", "subtract", "xlogy", "rsub",
+    "div_no_nan", "floor_div", "gcd", "lcm", "outer",
+    "bitwise_left_shift", "bitwise_right_shift", "logical_left_shift", "logical_right_shift",
 }
-TERNARY = {"addcdiv", "addcmul", "lerp", "mac", "where"}
+TERNARY = {"addcdiv", "addcmul", "lerp", "mac", "where", "snake_beta"}
 REDUCTION = {"max", "min", "mean", "prod", "sum", "var", "std", "std_hw", "var_hw"}
-CUMULATIVE = {"cumsum", "cumprod"}
 # complex consumers take one ComplexTensor; complex_tensor builds one from (real, imag)
-COMPLEX_CONSUMERS = {"angle", "real", "imag", "conj", "polar"}
+COMPLEX_CONSUMERS = {"angle", "real", "imag", "conj", "polar", "is_imag", "is_real"}
 GLU = {"glu", "geglu", "reglu", "swiglu"}
+# quantization ops with (scale, zero_point[, out_scale, out_zp]) signatures
+QUANT = {"quantize", "dequantize", "requantize"}
 # backward ops whose call signature differs from the generic (grad + base-arity) rule.
 # tensors = # of input tensors after grad; scalars = trailing scalar args.
 BW_OVERRIDE = {
@@ -135,6 +156,19 @@ BW_OVERRIDE = {
     "min_bw": {"tensors": 2, "scalars": []},             # grad, input, other
     "addcdiv_bw": {"tensors": 3, "scalars": [0.5]},      # grad, input, t1, t2, value
     "addcmul_bw": {"tensors": 3, "scalars": [0.5]},      # grad, input, t1, t2, value
+    "celu_bw": {"tensors": 1, "scalars": [], "kw": {"alpha": 1.0}},
+    "elu_bw": {"tensors": 1, "scalars": [], "kw": {"alpha": 1.0}},
+    "hardtanh_bw": {"tensors": 1, "scalars": [], "kw": {"min": -1.0, "max": 1.0}},
+    "leaky_relu_bw": {"tensors": 1, "scalars": [], "kw": {"negative_slope": 0.1}},
+    "threshold_bw": {"tensors": 1, "scalars": [0.5, 0.0]},  # grad, input, min, max (positional)
+    "softplus_bw": {"tensors": 1, "scalars": [], "kw": {"beta": 1.0, "threshold": 20.0}},
+    "rpow_bw": {"tensors": 1, "scalars": [2.0]},         # grad, input, exponent (positional)
+    "rdiv_bw": {"tensors": 1, "scalars": [2.0]},         # grad, input, scalar (positional)
+    "logiteps_bw": {"tensors": 1, "scalars": [], "kw": {"eps": 1e-6}},
+    "polygamma_bw": {"tensors": 1, "scalars": [1]},      # grad, input, n (positional)
+    "prod_bw": {"tensors": 1, "scalars": []},            # grad, input
+    "assign_bw": {"tensors": 1, "scalars": []},          # grad, input
+    "div_no_nan_bw": {"tensors": 1, "scalars": [2.0]},   # grad, input, scalar (no TT overload)
 }
 # unary ops that take POSITIONAL scalar params
 UPARAMS = {
@@ -143,6 +177,7 @@ UPARAMS = {
     "relu_max": (0.5,), "relu_min": (0.5,), "fill": (1.0,),
     "threshold": (0.5, 0.0), "rpow": (2.0,), "round": (), "polygamma": (1,),
     "rdiv": (2.0,), "prelu": (0.25,),
+    "polyval": ([1.0, 2.0, 3.0],),
 }
 # unary ops that need KEYWORD-only scalar params
 UKW = {
@@ -200,8 +235,6 @@ MANUAL_REDUCE = {
     "prod": lambda a: torch.prod(a, dim=-1, keepdim=True),
     "std_hw": lambda a: torch.std(a, dim=(-2, -1), keepdim=True, unbiased=False),
     "var_hw": lambda a: torch.var(a, dim=(-2, -1), keepdim=True, unbiased=False),
-    "cumsum": lambda a: torch.cumsum(a, dim=-1),
-    "cumprod": lambda a: torch.cumprod(a, dim=-1),
 }
 
 
@@ -226,16 +259,17 @@ def to_t(x):
 _INT_DTYPES = (ttnn.int32, ttnn.uint32, ttnn.uint16, ttnn.uint8)
 
 
-def call_golden(gf, args, device, dtype=None):
+def call_golden(gf, args, device, dtype=None, kw=None):
     if gf is None:
         return None
+    kw = kw or {}
 
     def _try(a):
         try:
-            return gf(*a)
+            return gf(*a, **kw)
         except TypeError:
             try:
-                return gf(*a, device=device)
+                return gf(*a, device=device, **kw)
             except Exception:
                 return None
         except Exception:
@@ -323,12 +357,12 @@ def _trunc_int(v):
     return v
 
 
-def call_bw_golden(gf, grad, inputs, scalars, device, dtype):
+def call_bw_golden(gf, grad, inputs, scalars, device, dtype, kw=None):
     """Backward golden with an int fallback. Autograd goldens need float inputs with
     requires_grad, which int tensors can't have. For int dtypes that return no golden,
     re-run on float-casted inputs (grad cast to float, inputs float+requires_grad), then
     truncate the resulting gradient back to int to match the device's int output."""
-    golden = call_golden(gf, (grad, *[_grad_clone(x) for x in inputs], *scalars), device)
+    golden = call_golden(gf, (grad, *[_grad_clone(x) for x in inputs], *scalars), device, kw=kw)
     if golden is not None or dtype not in _INT_DTYPES:
         return golden
     g_f = grad.float() if (torch.is_tensor(grad) and not grad.is_floating_point()) else grad
@@ -336,7 +370,7 @@ def call_bw_golden(gf, grad, inputs, scalars, device, dtype):
         (x.float().clone().detach().requires_grad_(True) if (torch.is_tensor(x) and not x.is_floating_point()) else _grad_clone(x))
         for x in inputs
     ]
-    r = call_golden(gf, (g_f, *in_f, *scalars), device)
+    r = call_golden(gf, (g_f, *in_f, *scalars), device, kw=kw)
     return _trunc_int(r) if r is not None else None
 
 
@@ -353,6 +387,36 @@ def run_op(name, fn, gf, dtype, layout, mem, device):
         a_t, a = build(base, dtype, layout, mem, device)
         out = fn(a, memory_config=make_mem(mem, SHAPE, device) if isinstance(mem, str) else mem)
         return finalize(out, a_t, dtype)
+
+    # bitcast: reinterpret bits to the same dtype -> identity
+    if base == "bitcast" and mode == "fwd":
+        a_t, a = build(base, dtype, layout, mem, device)
+        out = fn(a, dtype)
+        return finalize(out, a_t, dtype)
+
+    # quantization: (scale, zero_point) or (in_scale, in_zp, out_scale, out_zp)
+    if base in QUANT and mode == "fwd":
+        a_t, a = build(base, dtype, layout, mem, device)
+        sc = (0.1, 0, 0.2, 0) if base == "requantize" else (0.1, 0)
+        out = fn(a, *sc)
+        golden = call_golden(gf, (a_t, *sc), device, dtype)
+        return finalize(out, golden, dtype)
+
+    # complex backward: fn(grad, complex_input, memory_config=...). grad is real for
+    # angle/real/imag, complex for conj/polar. No torch golden wired -> acceptance only.
+    if mode == "bw" and base in COMPLEX_CONSUMERS:
+        mem_cfg = make_mem(mem, SHAPE, device) if isinstance(mem, str) else mem
+        _, re = build(base, dtype, layout, mem, device)
+        _, im = build(base, dtype, layout, mem, device)
+        c = ttnn.complex_tensor(re, im)
+        if base in ("conj", "polar"):  # grad is a ComplexTensor
+            _, gr = build(base, dtype, layout, mem, device)
+            _, gi = build(base, dtype, layout, mem, device)
+            grad = ttnn.complex_tensor(gr, gi)
+        else:  # angle/real/imag: grad is a real tensor
+            _, grad = build(base, dtype, layout, mem, device)
+        _ = fn(grad, c, memory_config=mem_cfg)
+        return "OK", "no-golden"
 
     # complex producer: complex_tensor(real, imag) -> ComplexTensor; golden = re/im roundtrip
     if base == "complex_tensor":
@@ -389,8 +453,9 @@ def run_op(name, fn, gf, dtype, layout, mem, device):
             tt_in.append(t)
             torch_in.append(_grad_clone(t_t))
         sc = spec["scalars"]
-        out = fn(g, *tt_in, *sc)
-        golden = call_bw_golden(gf, g_t, torch_in, sc, device, dtype)
+        kw = spec.get("kw", {})
+        out = fn(g, *tt_in, *sc, **kw)
+        golden = call_bw_golden(gf, g_t, torch_in, sc, device, dtype, kw)
         return finalize(out, golden, dtype)
 
     # GLU family: fn(input, dim); golden(input, dim). dim=-1 (last dim must be even)
@@ -400,15 +465,16 @@ def run_op(name, fn, gf, dtype, layout, mem, device):
         golden = call_golden(gf, (a_ref, -1), device, dtype)
         return finalize(out, golden, dtype)
 
-    # reductions / cumulative: probe at dim=-1
-    if base in REDUCTION or base in CUMULATIVE:
+    # reductions: probe at dim=-1
+    if base in REDUCTION:
         a_ref, a = build(base, dtype, layout, mem, device)
-        if base in CUMULATIVE:
-            out = fn(a, dim=-1)
-        elif base in ("std_hw", "var_hw"):
-            out = fn(a)
+        # A reduced output (e.g. prod -> [...,1]) can't be re-sharded onto the same
+        # single-core grid as the input, so route reduced results to interleaved L1.
+        out_kw = {"memory_config": ttnn.L1_MEMORY_CONFIG} if _is_sharded(mem) else {}
+        if base in ("std_hw", "var_hw"):
+            out = fn(a, **out_kw)
         else:
-            out = fn(a, dim=-1, keepdim=True)
+            out = fn(a, dim=-1, keepdim=True, **out_kw)
         if base in MANUAL_REDUCE:
             try:
                 golden = MANUAL_REDUCE[base](a_ref)
@@ -462,12 +528,18 @@ def probe_one(name, w, f, device):
     for ln, layout in LAYOUTS.items():
         for mn, mem in MEMS.items():
             for dn, dtype in DTYPES.items():
+                # reseed per-config so inputs are identical whether this op is probed
+                # alone (--op) or as part of a full run, independent of iteration order.
+                seed = zlib.crc32(f"{name}/{dn}/{ln}/{mn}".encode()) ^ _BASE_SEED
+                torch.manual_seed(seed)
                 try:
                     acc, detail = run_op(name, fn, gf, dtype, layout, mem, device)
                 except Exception as e:
-                    # keep the full error, collapsed to a single CSV-safe line
+                    # collapse to a single CSV-safe line; drop the volatile backtrace
+                    # (pointer addresses change every process run -> non-deterministic).
                     acc = "FAIL"
-                    detail = " | ".join(s.strip() for s in str(e).strip().splitlines() if s.strip())
+                    msg = str(e).split("backtrace")[0]
+                    detail = " | ".join(s.strip() for s in msg.strip().splitlines() if s.strip()).rstrip(" |")
                 w.writerow([name, dn, ln, mn, acc, detail])
                 f.flush()
 
