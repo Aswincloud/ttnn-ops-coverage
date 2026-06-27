@@ -84,7 +84,7 @@ async function handleFeedback(request, env, ctx) {
   const page = String(data?.page || '').trim().slice(0, MAX.page);
   const message = String(data?.message || '').trim().slice(0, MAX.message);
 
-  if (message.length < 3) return json({ error: 'Please enter a message.' }, 400);
+  if (message.length < 3) return json({ error: 'Please enter a message (at least 3 characters).' }, 400);
   if (email && !looksEmail(email)) return json({ error: 'That email address looks invalid.' }, 400);
 
   if (!env.RESEND_API_KEY) {

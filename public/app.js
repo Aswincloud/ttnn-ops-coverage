@@ -537,7 +537,7 @@ addEventListener('keydown',e=>{
   form.addEventListener('submit',async e=>{
     e.preventDefault();
     const message=msg.value.trim();
-    if(message.length<3){ setMsg('Please enter a message.','err'); msg.focus(); return; }
+    if(message.length<3){ setMsg('Please enter a message (at least 3 characters).','err'); msg.focus(); return; }
     const em=email.value.trim();
     if(em && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)){ setMsg('That email looks invalid.','err'); email.focus(); return; }
 
