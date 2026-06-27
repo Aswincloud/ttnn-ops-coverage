@@ -10,7 +10,10 @@ Built to deploy as a **Cloudflare Workers Static Assets** site. The entire front
 
 ## What it shows
 
-The source data (`ops.csv`) is a sweep of **6,124 test configurations** — each of 259 ops run across 6 dtypes × 2 layouts × 2 memory configs. Each run's raw `pcc_or_reason` column is classified into a clean 6-status taxonomy:
+The source data (`ops.csv`) is produced by [`eltwise_support_probe.py`](PROBE.md) — a
+sweep of **20,400 test configurations**: each of 255 ops run across 8 dtypes × 2 layouts
+× 5 memory configs (interleaved `dram`/`l1` + sharded `height`/`width`/`block`). Each
+run's raw `pcc_or_reason` column is classified into a clean status taxonomy:
 
 | Status | Meaning |
 |--------|---------|
@@ -38,13 +41,16 @@ Keyboard: `/` focuses search · `Esc` clears search/solo.
 
 ```
 .
-├── public/            # ← deployed to Cloudflare (static assets)
-│   ├── index.html     #   markup + design system (CSS)
-│   ├── app.js         #   chart/table renderer (no deps)
-│   └── data.js        #   generated — window.DASH payload
-├── ops.csv            # source data (regenerate data.js from this)
-├── process.py         # CSV → public/data.js transformer + classifier
-├── wrangler.jsonc     # Cloudflare Workers static-assets config
+├── public/                 # ← static assets served by the Worker
+│   ├── index.html          #   markup + design system (CSS)
+│   ├── app.js              #   chart/table renderer (no deps)
+│   └── data.js             #   generated — window.DASH payload
+├── worker/index.js         # serves assets + POST /api/feedback → Resend
+├── ops.csv                 # source data (regenerate data.js from this)
+├── process.py              # CSV → public/data.js transformer + classifier
+├── eltwise_support_probe.py # the probe that GENERATES ops.csv (see PROBE.md)
+├── PROBE.md                # how the probe sweep works / how to run it
+├── wrangler.jsonc          # Cloudflare Workers config (assets + feedback API)
 └── package.json
 ```
 

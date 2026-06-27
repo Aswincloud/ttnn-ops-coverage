@@ -1,0 +1,504 @@
+"""Comprehensive eltwise op support prober.
+
+For every op it tries each (dtype x layout x memory-config) combo, records
+whether the config is ACCEPTED (no error) and whether the result matches the
+ttnn golden reference (PCC pass/fail). Writes a CSV incrementally so partial
+results survive interruption.
+
+Run:  python tests/ttnn/unit_tests/operations/eltwise/eltwise_support_probe.py
+Env:  PROBE_DTYPES, PROBE_LAYOUTS, PROBE_MEMS to subset axes (comma separated).
+"""
+import os
+import csv
+import math
+import torch
+import ttnn
+
+# ----------------------------------------------------------------------------- axes
+ALL_DTYPES = {
+    "bfloat16": ttnn.bfloat16,
+    "bfloat8_b": ttnn.bfloat8_b,
+    "bfloat4_b": ttnn.bfloat4_b,
+    "float32": ttnn.float32,
+    "int32": ttnn.int32,
+    "uint32": ttnn.uint32,
+    "uint16": ttnn.uint16,
+    "uint8": ttnn.uint8,
+}
+ALL_LAYOUTS = {"tile": ttnn.TILE_LAYOUT, "rm": ttnn.ROW_MAJOR_LAYOUT}
+# mem axis is kept as string tokens; sharded configs are resolved per-shape at runtime
+# so they work on any hardware (see make_mem).
+ALL_MEMS = {k: k for k in ("dram", "l1", "height", "width", "block")}
+
+# minimum tensor: a single 32x32 tile -> keeps the full sweep fast and lets every
+# sharding strategy map onto a single core regardless of the device's grid size.
+SHAPE = (1, 1, 32, 32)
+# ops that can't run on a single 32x32 tile: GLU splits the last dim in half and each
+# half must be a full tile (>=32) in TILE layout, so the last dim must be >=64.
+PER_OP_SHAPE = {
+    "glu": (1, 1, 32, 64),
+    "geglu": (1, 1, 32, 64),
+    "reglu": (1, 1, 32, 64),
+    "swiglu": (1, 1, 32, 64),
+}
+_SHARD_STRATEGY = {
+    "height": ttnn.ShardStrategy.HEIGHT,
+    "width": ttnn.ShardStrategy.WIDTH,
+    "block": ttnn.ShardStrategy.BLOCK,
+}
+
+
+def make_mem(token, shape, device):
+    """Resolve a mem token to a memory_config. Sharded tokens build a 1-core shard
+    sized to the tensor (one tile here), valid on any hardware."""
+    if token == "dram":
+        return ttnn.DRAM_MEMORY_CONFIG
+    if token == "l1":
+        return ttnn.L1_MEMORY_CONFIG
+    H, W = shape[-2], shape[-1]
+    return ttnn.create_sharded_memory_config(
+        shape=(H, W),
+        core_grid=ttnn.CoreGrid(y=1, x=1),
+        strategy=_SHARD_STRATEGY[token],
+        orientation=ttnn.ShardOrientation.ROW_MAJOR,
+    )
+
+
+def _subset(env, full):
+    v = os.environ.get(env)
+    if not v:
+        return full
+    return {k: full[k] for k in v.split(",") if k in full}
+
+
+DTYPES = _subset("PROBE_DTYPES", ALL_DTYPES)
+LAYOUTS = _subset("PROBE_LAYOUTS", ALL_LAYOUTS)
+MEMS = _subset("PROBE_MEMS", ALL_MEMS)
+
+# ----------------------------------------------------------------------------- op list
+OPS = """
+abs acos acosh add addalpha addcdiv addcmul angle asin asinh assign atan atan2 atanh
+bias_gelu bitwise_and bitwise_not bitwise_or bitwise_xor
+cbrt ceil celu clamp clip complex_tensor conj cos cosh cumsum cumprod
+deg2rad digamma divide
+elu eq eqz erf erfc erfinv exp exp2 expm1
+fill floor fmod frac
+ge geglu gelu gez glu gt gtz
+hardmish hardshrink hardsigmoid hardswish hardtanh heaviside hypot
+i0 i1 identity imag isclose isfinite isinf isnan isneginf isposinf
+ldexp le leaky_relu lerp lez lgamma log log_sigmoid log1p log10 log2
+logaddexp logaddexp2 logical_and logical_not logical_or logical_xor logit ltz
+mac max maximum mean min minimum mish mul multigammaln multiply
+ne neg nextafter nez
+polar pow prod prelu
+rad2deg rdiv real reciprocal reglu relu relu6 relu_max relu_min remainder round
+rpow rsqrt rsub
+selu sign signbit sigmoid sigmoid_accurate silu sin sinh softplus softshrink softsign
+sqrt square squared_difference std std_hw sub subalpha subtract swiglu swish
+tan tanh tanhshrink threshold tril triu trunc
+var var_hw where xielu xlogy
+abs_bw acos_bw acosh_bw add_bw addalpha_bw addcdiv_bw addcmul_bw asin_bw asinh_bw atan_bw
+atan2_bw atanh_bw bias_gelu_bw ceil_bw cos_bw cosh_bw deg2rad_bw digamma_bw
+erf_bw erfc_bw erfinv_bw exp_bw exp2_bw expm1_bw fill_bw fill_zero_bw floor_bw fmod_bw frac_bw
+gelu_bw hardshrink_bw hardsigmoid_bw hardswish_bw hypot_bw i0_bw ldexp_bw lerp_bw lgamma_bw
+log_bw log_sigmoid_bw log1p_bw log10_bw log2_bw logaddexp_bw logaddexp2_bw logit_bw
+max_bw min_bw mul_bw multigammaln_bw neg_bw pow_bw rad2deg_bw reciprocal_bw relu_bw relu6_bw
+remainder_bw round_bw rsqrt_bw rsub_bw selu_bw sigmoid_bw sign_bw silu_bw sin_bw sinh_bw
+softshrink_bw softsign_bw sqrt_bw square_bw squared_difference_bw sub_bw subalpha_bw
+tan_bw tanh_bw tanhshrink_bw trunc_bw where_bw xlogy_bw
+add_ bias_gelu_ div_ divide_ eq_ ge_ gt_ ldexp_ le_ logaddexp_ logaddexp2_ logical_and_
+logical_not_ logical_or_ logical_xor_ mul_ multiply_ ne_ rsub_ squared_difference_ sub_ subtract_
+""".split()
+
+# ----------------------------------------------------------------------------- per-op spec
+# kind: u=unary, b=binary, t=ternary. params: extra scalar args appended after tensors.
+BINARY = {
+    "add", "addalpha", "atan2", "bias_gelu", "bitwise_and", "bitwise_or", "bitwise_xor",
+    "div", "divide", "eq", "fmod", "ge", "gt", "hypot", "isclose", "ldexp", "le",
+    "logaddexp", "logaddexp2", "logical_and", "logical_or", "logical_xor", "lt", "maximum",
+    "minimum", "mul", "multiply", "ne", "nextafter", "pow", "remainder",
+    "squared_difference", "sub", "subalpha", "subtract", "xlogy", "rsub",
+}
+TERNARY = {"addcdiv", "addcmul", "lerp", "mac", "where"}
+REDUCTION = {"max", "min", "mean", "prod", "sum", "var", "std", "std_hw", "var_hw"}
+CUMULATIVE = {"cumsum", "cumprod"}
+# complex consumers take one ComplexTensor; complex_tensor builds one from (real, imag)
+COMPLEX_CONSUMERS = {"angle", "real", "imag", "conj", "polar"}
+GLU = {"glu", "geglu", "reglu", "swiglu"}
+# backward ops whose call signature differs from the generic (grad + base-arity) rule.
+# tensors = # of input tensors after grad; scalars = trailing scalar args.
+BW_OVERRIDE = {
+    "pow_bw": {"tensors": 1, "scalars": [2.0]},          # grad, input, exponent
+    "logit_bw": {"tensors": 1, "scalars": []},           # grad, input
+    "fill_bw": {"tensors": 1, "scalars": []},            # grad, input
+    "max_bw": {"tensors": 2, "scalars": []},             # grad, input, other
+    "min_bw": {"tensors": 2, "scalars": []},             # grad, input, other
+    "addcdiv_bw": {"tensors": 3, "scalars": [0.5]},      # grad, input, t1, t2, value
+    "addcmul_bw": {"tensors": 3, "scalars": [0.5]},      # grad, input, t1, t2, value
+}
+# unary ops that take POSITIONAL scalar params
+UPARAMS = {
+    "clamp": (-0.5, 0.5), "clip": (-0.5, 0.5),
+    "leaky_relu": (0.1,), "heaviside": (0.5,),
+    "relu_max": (0.5,), "relu_min": (0.5,), "fill": (1.0,),
+    "threshold": (0.5, 0.0), "rpow": (2.0,), "round": (), "polygamma": (1,),
+    "rdiv": (2.0,), "prelu": (0.25,),
+}
+# unary ops that need KEYWORD-only scalar params
+UKW = {
+    "elu": {"alpha": 1.0}, "celu": {"alpha": 1.0},
+    "hardshrink": {"lambd": 0.5}, "softshrink": {"lambd": 0.5},
+    "logit": {"eps": 1e-6},
+}
+# binary ops needing a trailing scalar
+BPARAMS = {"addalpha": (1.0,), "subalpha": (1.0,), "isclose": ()}
+
+
+def quantize_ref(t, dtype):
+    """Round the torch reference to the device dtype so PCC measures kernel error,
+    not input-quantisation noise (matches the convention in ttnn unit tests)."""
+    if dtype == ttnn.bfloat16:
+        return t.to(torch.bfloat16).to(torch.float32)
+    return t  # float32/int kept as-is; bfloat8_b has no torch repr (tolerance handles)
+
+
+# ops whose valid input domain differs from the generic (0.1, 0.85)
+DOMAIN = {
+    "acosh": (1.1, 5.0),       # acosh defined for x >= 1
+    "multigammaln": (1.6, 5.0),  # requires x > (p-1)/2
+    "cosh": (-3.0, 3.0),
+    "lgamma": (0.5, 5.0),
+    "digamma": (0.5, 5.0),
+}
+
+
+def build(name, dtype, layout, mem, device, shape=None):
+    if shape is None:
+        shape = PER_OP_SHAPE.get(name, SHAPE)
+    if dtype in _INT_DTYPES:
+        t = torch.randint(1, 50, shape, dtype=torch.int32)
+    else:
+        lo, hi = DOMAIN.get(name, (0.1, 0.85))  # safe default for log/sqrt/acos/atanh
+        t = torch.empty(shape).uniform_(lo, hi)
+    mem_cfg = make_mem(mem, shape, device) if isinstance(mem, str) else mem
+    tt = ttnn.from_torch(t, dtype=dtype, layout=layout, device=device, memory_config=mem_cfg)
+    return quantize_ref(t, dtype), tt
+
+
+# forward ops with no registered ttnn golden -> supply the torch reference manually
+MANUAL_GOLDEN = {
+    "i1": lambda a: torch.special.i1(a),
+    "bitwise_not": lambda a: torch.bitwise_not(a.to(torch.int64)),
+    "where": lambda c, t, f: torch.where(c != 0, t, f),
+}
+# backward ops with no usable registered golden: (grad, *inputs) -> grad wrt first input
+MANUAL_BW_GOLDEN = {
+    "where": lambda g, c, t, f: torch.where(c != 0, g, torch.zeros_like(g)),
+}
+# reductions/cumulative with no registered golden (probed at dim=-1)
+MANUAL_REDUCE = {
+    "prod": lambda a: torch.prod(a, dim=-1, keepdim=True),
+    "std_hw": lambda a: torch.std(a, dim=(-2, -1), keepdim=True, unbiased=False),
+    "var_hw": lambda a: torch.var(a, dim=(-2, -1), keepdim=True, unbiased=False),
+    "cumsum": lambda a: torch.cumsum(a, dim=-1),
+    "cumprod": lambda a: torch.cumprod(a, dim=-1),
+}
+
+
+def _real_view(x):
+    """Flatten a (possibly complex) tensor to a real view so PCC can compare it."""
+    if torch.is_tensor(x) and torch.is_complex(x):
+        return torch.view_as_real(x.resolve_conj())  # conj() returns a lazy view
+    return x
+
+
+def _complex_to_torch(out):
+    """ttnn ComplexTensor -> torch complex; plain ttnn tensor -> torch tensor."""
+    if not torch.is_tensor(out) and hasattr(out, "real") and hasattr(out, "imag"):
+        return torch.complex(to_t(out.real).float(), to_t(out.imag).float())
+    return to_t(out)
+
+
+def to_t(x):
+    return ttnn.to_torch(x)
+
+
+_INT_DTYPES = (ttnn.int32, ttnn.uint32, ttnn.uint16, ttnn.uint8)
+
+
+def call_golden(gf, args, device, dtype=None):
+    if gf is None:
+        return None
+
+    def _try(a):
+        try:
+            return gf(*a)
+        except TypeError:
+            try:
+                return gf(*a, device=device)
+            except Exception:
+                return None
+        except Exception:
+            return None
+
+    r = _try(args)
+    # Fallback for int dtypes of float ops: torch goldens reject int input, so run
+    # the golden on int->float-casted inputs, then truncate back to int to match the
+    # device's integer output, and compare.
+    if r is None and dtype in _INT_DTYPES:
+        fargs = [x.float() if (torch.is_tensor(x) and not x.is_floating_point()) else x for x in args]
+        r = _try(fargs)
+        if torch.is_tensor(r) and r.is_floating_point():
+            r = r.to(torch.int32)
+    return r
+
+
+def pcc_ok(golden, got, dtype):
+    try:
+        g = golden.to(torch.float32).flatten()
+        o = got.to(torch.float32).flatten()
+        if g.shape != o.shape:
+            return "shape?"
+        if dtype in _INT_DTYPES:
+            return "pass" if torch.equal(golden.to(torch.int64), got.to(torch.int64)) else "fail"
+        mask = torch.isfinite(g) & torch.isfinite(o)
+        if mask.sum() == 0:
+            return "nan"
+        g, o = g[mask], o[mask]
+        if g.numel() < 2 or torch.allclose(g, o, atol=1e-2, rtol=1e-2):
+            return "pass"
+        gc, oc = g - g.mean(), o - o.mean()
+        denom = gc.norm() * oc.norm()
+        if denom == 0:
+            return "pass" if torch.allclose(g, o, atol=1e-2) else "fail"
+        pcc = float((gc @ oc) / denom)
+        thr = {ttnn.bfloat8_b: 0.97, ttnn.bfloat4_b: 0.90}.get(dtype, 0.99)
+        return "pass" if pcc >= thr else f"fail({pcc:.3f})"
+    except Exception as e:
+        return f"pcc_err:{str(e)[:30]}"
+
+
+def build_args(base, dtype, layout, mem, device):
+    """Construct (tt_args, tt_kwargs, torch_args) mirroring the base op's arity."""
+    a_t, a = build(base, dtype, layout, mem, device)
+    if base in TERNARY:
+        b_t, b = build(base, dtype, layout, mem, device)
+        c_t, c = build(base, dtype, layout, mem, device)
+        return [a, b, c], {}, [a_t, b_t, c_t]
+    if base in BINARY:
+        b_t, b = build(base, dtype, layout, mem, device)
+        p = BPARAMS.get(base, ())
+        return [a, b, *p], {}, [a_t, b_t, *p]
+    if base in UKW:
+        kw = UKW[base]
+        return [a], dict(kw), [a_t, *kw.values()]
+    if base in UPARAMS:
+        p = UPARAMS[base]
+        return [a, *p], {}, [a_t, *p]
+    return [a], {}, [a_t]
+
+
+def finalize(out, golden, dtype):
+    if isinstance(out, (list, tuple)):
+        out = out[0]
+    got = to_t(out)
+    if golden is None:
+        return "OK", "no-golden"
+    if isinstance(golden, (list, tuple)):
+        golden = golden[0]
+    return "OK", pcc_ok(golden, got, dtype)
+
+
+def _grad_clone(x):
+    if torch.is_tensor(x) and x.is_floating_point():
+        return x.clone().detach().requires_grad_(True)
+    return x
+
+
+def _trunc_int(v):
+    if torch.is_tensor(v) and v.is_floating_point():
+        return v.to(torch.int32)
+    if isinstance(v, (list, tuple)):
+        return [_trunc_int(e) for e in v]
+    return v
+
+
+def call_bw_golden(gf, grad, inputs, scalars, device, dtype):
+    """Backward golden with an int fallback. Autograd goldens need float inputs with
+    requires_grad, which int tensors can't have. For int dtypes that return no golden,
+    re-run on float-casted inputs (grad cast to float, inputs float+requires_grad), then
+    truncate the resulting gradient back to int to match the device's int output."""
+    golden = call_golden(gf, (grad, *[_grad_clone(x) for x in inputs], *scalars), device)
+    if golden is not None or dtype not in _INT_DTYPES:
+        return golden
+    g_f = grad.float() if (torch.is_tensor(grad) and not grad.is_floating_point()) else grad
+    in_f = [
+        (x.float().clone().detach().requires_grad_(True) if (torch.is_tensor(x) and not x.is_floating_point()) else _grad_clone(x))
+        for x in inputs
+    ]
+    r = call_golden(gf, (g_f, *in_f, *scalars), device)
+    return _trunc_int(r) if r is not None else None
+
+
+def run_op(name, fn, gf, dtype, layout, mem, device):
+    # resolve mode: forward / backward (_bw) / in-place (trailing _)
+    mode, base = "fwd", name
+    if name.endswith("_bw"):
+        mode, base = "bw", name[:-3]
+    elif name.endswith("_"):
+        mode, base = "ip", name[:-1]
+
+    # assign: unary copy op that requires memory_config; golden is identity
+    if base == "assign" and mode == "fwd":
+        a_t, a = build(base, dtype, layout, mem, device)
+        out = fn(a, memory_config=make_mem(mem, SHAPE, device) if isinstance(mem, str) else mem)
+        return finalize(out, a_t, dtype)
+
+    # complex producer: complex_tensor(real, imag) -> ComplexTensor; golden = re/im roundtrip
+    if base == "complex_tensor":
+        re_ref, re = build(base, dtype, layout, mem, device)
+        im_ref, im = build(base, dtype, layout, mem, device)
+        out = ttnn.complex_tensor(re, im)
+        got = _complex_to_torch(out)
+        golden = torch.complex(re_ref.float(), im_ref.float())
+        return "OK", pcc_ok(_real_view(golden), _real_view(got), dtype)
+
+    # complex consumers: take one ComplexTensor built from (real, imag)
+    if base in COMPLEX_CONSUMERS:
+        re_ref, re = build(base, dtype, layout, mem, device)
+        im_ref, im = build(base, dtype, layout, mem, device)
+        c = ttnn.complex_tensor(re, im)
+        out = fn(c)
+        cin = torch.complex(re_ref.float(), im_ref.float())
+        if base == "polar":  # golden is torch.polar(abs, angle) (two positional args)
+            golden = torch.polar(re_ref.float(), im_ref.float())
+        else:
+            golden = call_golden(gf, (cin,), device)
+        if golden is None:
+            return "OK", "no-golden"
+        return "OK", pcc_ok(_real_view(golden), _real_view(_complex_to_torch(out)), dtype)
+
+    # backward ops with an op-specific signature (extra tensors / trailing scalars).
+    # checked before the reduction smoke path so max_bw/min_bw use their real signature.
+    if mode == "bw" and name in BW_OVERRIDE:
+        spec = BW_OVERRIDE[name]
+        g_t, g = build(base, dtype, layout, mem, device)
+        tt_in, torch_in = [], []
+        for _ in range(spec["tensors"]):
+            t_t, t = build(base, dtype, layout, mem, device)
+            tt_in.append(t)
+            torch_in.append(_grad_clone(t_t))
+        sc = spec["scalars"]
+        out = fn(g, *tt_in, *sc)
+        golden = call_bw_golden(gf, g_t, torch_in, sc, device, dtype)
+        return finalize(out, golden, dtype)
+
+    # GLU family: fn(input, dim); golden(input, dim). dim=-1 (last dim must be even)
+    if base in GLU:
+        a_ref, a = build(base, dtype, layout, mem, device)
+        out = fn(a, -1)
+        golden = call_golden(gf, (a_ref, -1), device, dtype)
+        return finalize(out, golden, dtype)
+
+    # reductions / cumulative: probe at dim=-1
+    if base in REDUCTION or base in CUMULATIVE:
+        a_ref, a = build(base, dtype, layout, mem, device)
+        if base in CUMULATIVE:
+            out = fn(a, dim=-1)
+        elif base in ("std_hw", "var_hw"):
+            out = fn(a)
+        else:
+            out = fn(a, dim=-1, keepdim=True)
+        if base in MANUAL_REDUCE:
+            try:
+                golden = MANUAL_REDUCE[base](a_ref)
+            except Exception:
+                golden = None
+        else:
+            try:
+                golden = gf(a_ref, dim=-1, keepdim=True) if gf else None
+            except Exception:
+                golden = None
+        return finalize(out, golden, dtype)
+
+    tt_args, tt_kw, torch_args = build_args(base, dtype, layout, mem, device)
+    if mode == "bw":
+        g_t, g = build(base, dtype, layout, mem, device)
+        out = fn(g, *tt_args, **tt_kw)
+        if base in MANUAL_BW_GOLDEN:
+            try:
+                golden = MANUAL_BW_GOLDEN[base](g_t, *torch_args)
+            except Exception:
+                golden = None
+        else:
+            # backward goldens run torch autograd internally -> inputs need requires_grad
+            golden = call_bw_golden(gf, g_t, torch_args, (), device, dtype)
+    else:  # forward or in-place (same call signature as base)
+        out = fn(*tt_args, **tt_kw)
+        if base in MANUAL_GOLDEN:
+            try:
+                golden = MANUAL_GOLDEN[base](*torch_args)
+            except Exception:
+                golden = None
+        else:
+            golden = call_golden(gf, tuple(torch_args), device, dtype)
+    return finalize(out, golden, dtype)
+
+
+CSV_PATH = os.path.join(os.path.dirname(__file__), "eltwise_support_matrix.csv")
+HEADER = ["op", "dtype", "layout", "mem", "accepted", "pcc_or_reason"]
+
+
+def probe_one(name, w, f, device):
+    fn = getattr(ttnn, name, None)
+    if fn is None or not callable(fn):
+        w.writerow([name, "-", "-", "-", "NO_OP", "not in ttnn"])
+        f.flush()
+        return
+    try:
+        gf = ttnn.get_golden_function(fn)
+    except Exception:
+        gf = None
+    for ln, layout in LAYOUTS.items():
+        for mn, mem in MEMS.items():
+            for dn, dtype in DTYPES.items():
+                try:
+                    acc, detail = run_op(name, fn, gf, dtype, layout, mem, device)
+                except Exception as e:
+                    # keep the full error, collapsed to a single CSV-safe line
+                    acc = "FAIL"
+                    detail = " | ".join(s.strip() for s in str(e).strip().splitlines() if s.strip())
+                w.writerow([name, dn, ln, mn, acc, detail])
+                f.flush()
+
+
+def main():
+    import argparse
+
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--op", default=None, help="probe a single op and append")
+    ap.add_argument("--list-ops", action="store_true")
+    args = ap.parse_args()
+
+    if args.list_ops:
+        print(" ".join(OPS))
+        return
+
+    mode = "a" if args.op else "w"
+    device = ttnn.open_device(device_id=0)
+    f = open(CSV_PATH, mode, newline="")
+    w = csv.writer(f)
+    if mode == "w":
+        w.writerow(HEADER)
+    try:
+        targets = [args.op] if args.op else OPS
+        for name in targets:
+            probe_one(name, w, f, device)
+            print(f"  done {name}", flush=True)
+    finally:
+        f.close()
+        ttnn.close_device(device)
+
+
+if __name__ == "__main__":
+    main()
