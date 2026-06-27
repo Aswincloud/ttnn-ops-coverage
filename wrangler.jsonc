@@ -20,7 +20,9 @@
     "not_found_handling": "404-page"
   },
   "vars": {
-    "FEEDBACK_TO": "aswin@aswincloud.com"
+    "FEEDBACK_TO": "aswin@aswincloud.com",
+    // Sender — aswincloud.com is a verified domain in Resend, so this works.
+    "FROM_EMAIL": "TTNN Ops Feedback <ttnn-ops@aswincloud.com>"
   },
   // Native rate-limiting binding (shared across isolates/edge — unlike an
   // in-memory counter). 5 requests / 60s per key (we key on CF-Connecting-IP).

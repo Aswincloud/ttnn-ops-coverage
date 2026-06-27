@@ -13,7 +13,7 @@
 
 const RESEND_URL = 'https://api.resend.com/emails';
 const DEFAULT_TO = 'aswin@aswincloud.com';
-const DEFAULT_FROM = 'TTNN Ops Feedback <onboarding@resend.dev>';
+const DEFAULT_FROM = 'TTNN Ops Feedback <ttnn-ops@aswincloud.com>';
 
 const TYPES = {
   suggestion: 'Suggestion / improvement',
