@@ -278,8 +278,12 @@ select.inp{cursor:pointer;appearance:none;background-image:url("data:image/svg+x
 .chip:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
 
 /* ---------- table ---------- */
-.tablecard{padding:0;overflow:hidden}
-.tscroll{overflow-x:auto;overflow-y:hidden}
+.tablecard{padding:0;overflow:clip}
+/* overflow-x:clip (not auto) so this wrapper does NOT become a scroll container —
+   an x:auto here traps the sticky <thead> to the wrapper instead of the viewport,
+   so the column header scrolls out of view behind the frozen page header.
+   The table fits without scrolling at >=1024px; x-scroll is re-enabled below. */
+.tscroll{overflow-x:clip;overflow-y:visible}
 /* separate (not collapse) so sticky thead cells own a solid bg and rows can't
    bleed through the seam during scroll; border-spacing:0 keeps it visually flush */
 table{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
@@ -357,6 +361,10 @@ footer a{color:var(--dim);text-decoration:none;border-bottom:1px dotted #3a4d6e}
   header.top{margin:0 -13px 18px;padding:14px 13px 12px;gap:12px}
   #search{width:100%}.searchbox{width:100%}.spacer{display:none}
   .brand h1{font-size:18px}.kpi .val{font-size:25px}
+  /* the table overflows the viewport here, so re-enable horizontal scroll.
+     The sticky column-header won't pin on mobile (acceptable tradeoff), but the
+     page header still freezes and rows no longer hide behind it. */
+  .tscroll{overflow-x:auto}
 }
 @media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 :focus-visible{outline:2px solid var(--primary);outline-offset:2px;border-radius:4px}
