@@ -45,11 +45,19 @@ body{
 }
 .tnum{font-variant-numeric:tabular-nums}
 .mono{font-family:var(--mono)}
-.wrap{max-width:1480px;margin:0 auto;padding:26px 22px 80px}
+.wrap{max-width:1480px;margin:0 auto;padding:0 22px 80px}
 a{color:inherit}
 
 /* ---------- header ---------- */
-header.top{display:flex;align-items:flex-start;gap:20px;flex-wrap:wrap;margin-bottom:22px}
+header.top{
+  display:flex;align-items:flex-start;gap:20px;flex-wrap:wrap;
+  position:sticky;top:0;z-index:50;
+  /* bleed into the wrap's horizontal padding so the frozen bar spans full width */
+  margin:0 -22px 22px;padding:18px 22px 16px;
+  background:linear-gradient(180deg,#0b1220f2 0%,#0b1220e6 70%,#0b122000 100%);
+  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+  border-bottom:1px solid var(--border);
+}
 .brand{display:flex;align-items:center;gap:14px;min-width:0}
 .logo{
   width:46px;height:46px;border-radius:12px;flex:none;display:grid;place-items:center;
@@ -193,7 +201,7 @@ header.top{display:flex;align-items:flex-start;gap:20px;flex-wrap:wrap;margin-bo
 .tscroll{overflow-x:auto;overflow-y:hidden}
 table{width:100%;border-collapse:collapse;font-size:13px}
 thead th{
-  position:sticky;top:0;background:#0d1626;z-index:2;text-align:left;
+  position:sticky;top:var(--head-h,84px);background:#0d1626;z-index:2;text-align:left;
   font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);font-weight:600;
   padding:12px 14px;border-bottom:1px solid var(--border);white-space:nowrap;cursor:pointer;user-select:none;
   transition:color var(--t);
@@ -259,7 +267,8 @@ footer a{color:var(--dim);text-decoration:none;border-bottom:1px dotted #3a4d6e}
 /* responsive */
 @media(max-width:1200px){.kpis{grid-template-columns:repeat(3,1fr)}.row-charts{grid-template-columns:1fr}.donut-wrap{justify-content:center}}
 @media(max-width:760px){
-  .wrap{padding:18px 13px 60px}.kpis{grid-template-columns:repeat(2,1fr)}.dims{grid-template-columns:1fr}
+  .wrap{padding:0 13px 60px}.kpis{grid-template-columns:repeat(2,1fr)}.dims{grid-template-columns:1fr}
+  header.top{margin:0 -13px 18px;padding:14px 13px 12px;gap:12px}
   #search{width:100%}.searchbox{width:100%}.spacer{display:none}
   .brand h1{font-size:18px}.kpi .val{font-size:25px}
 }

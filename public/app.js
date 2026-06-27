@@ -472,6 +472,18 @@ addEventListener('keydown',e=>{
   if(e.key==='Escape'){ $('#search').blur(); if(state.solo){state.solo=null;state.active=new Set(ORDER);renderChips();renderTable();} }
 });
 
+/* ---- sticky header: publish its height so the table's sticky <thead>
+   pins just below it instead of overlapping (header wraps at breakpoints,
+   so re-measure on resize). ---- */
+function syncHeaderHeight(){
+  const h=$('header.top');
+  if(!h) return;
+  const px=Math.round(h.getBoundingClientRect().height);
+  document.documentElement.style.setProperty('--head-h', px+'px');
+}
+let rTO=null;
+addEventListener('resize',()=>{ clearTimeout(rTO); rTO=setTimeout(syncHeaderHeight,120); });
+
 /* ---- boot ---- */
 renderMeta();
 renderUpdated();
@@ -482,4 +494,8 @@ renderSnapshot();
 renderChips();
 renderHead();
 renderTable();
+syncHeaderHeight();
+// re-measure after fonts settle (Fira can change header height once loaded)
+if(document.fonts&&document.fonts.ready) document.fonts.ready.then(syncHeaderHeight);
+addEventListener('load',syncHeaderHeight);
 })();
