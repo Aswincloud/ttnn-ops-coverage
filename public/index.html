@@ -71,6 +71,20 @@ header.top{display:flex;align-items:flex-start;gap:20px;flex-wrap:wrap;margin-bo
 }
 #search::placeholder{color:var(--faint)}
 #search:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px #3b82f633;width:280px}
+.updated{
+  display:flex;align-items:center;gap:9px;flex:none;cursor:default;user-select:none;
+  background:var(--card-2);border:1px solid var(--border);border-radius:10px;
+  padding:7px 13px 7px 11px;transition:border-color var(--t),background var(--t);
+}
+.updated:hover{border-color:var(--border-hi);background:var(--card)}
+.updated .pulse{
+  width:7px;height:7px;border-radius:50%;flex:none;background:var(--pass);
+  box-shadow:0 0 0 0 #10b98166;animation:pulse 2.4s ease-out infinite;
+}
+@keyframes pulse{0%{box-shadow:0 0 0 0 #10b98155}70%{box-shadow:0 0 0 7px #10b98100}100%{box-shadow:0 0 0 0 #10b98100}}
+.updated .ut{display:flex;flex-direction:column;line-height:1.25}
+.updated .ul{font-size:9.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);font-weight:600}
+.updated .uv{font-family:var(--mono);font-size:12.5px;color:var(--text);font-weight:500;font-variant-numeric:tabular-nums}
 
 /* ---------- kpi ---------- */
 .kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:13px;margin-bottom:18px}
@@ -253,6 +267,13 @@ footer a{color:var(--dim);text-decoration:none;border-bottom:1px dotted #3a4d6e}
       </div>
     </div>
     <div class="spacer"></div>
+    <div class="updated" id="updated" hidden title="">
+      <span class="pulse" aria-hidden="true"></span>
+      <span class="ut">
+        <span class="ul">Last updated</span>
+        <span class="uv" id="updatedVal">—</span>
+      </span>
+    </div>
     <div class="searchbox">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
       <input id="search" type="search" placeholder="filter ops…  (e.g. add, _bw, prod)" autocomplete="off" aria-label="Filter operations">

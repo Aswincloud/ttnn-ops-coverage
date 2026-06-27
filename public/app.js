@@ -45,9 +45,8 @@ function renderMeta(){
   $('#meta').innerHTML =
     `<b>${fmt(m.total)}</b> configs`+
     `<span class="dotsep"></span><b>${m.ops}</b> ops`+
-    `<span class="dotsep"></span>${m.dtypes.length} dtypes × ${m.layouts.length} layouts × ${m.mems.length} mem`+
-    `<span class="dotsep"></span>generated ${m.generated}`;
-  $('#footMeta').textContent = `${fmt(m.total)} configurations across ${m.ops} operations · generated ${m.generated}`;
+    `<span class="dotsep"></span>${m.dtypes.length} dtypes × ${m.layouts.length} layouts × ${m.mems.length} mem`;
+  $('#footMeta').textContent = `${fmt(m.total)} configurations across ${m.ops} operations · data refreshed ${m.generated}`;
 
   const runnable = m.total - sc.SKIP - sc.NOT_IN_TTNN;
   const verifiable = sc.PASS + sc.PCC_FAIL;       // had a golden ref to compare
@@ -80,6 +79,43 @@ function renderMeta(){
       <div class="val" style="color:${c.color==='#a78bfa'||c.color==='#3b82f6'?'var(--text)':c.color}">${c.val}</div>
       <div class="meta">${c.meta}</div>
     </div>`).join('');
+}
+
+/* =========================================================
+   LAST-UPDATED PILL  (relative time, self-refreshing)
+========================================================= */
+function relTime(ms){
+  const s = Math.max(0, Math.round((Date.now()-ms)/1000));
+  if (s < 45)            return 'just now';
+  if (s < 90)            return 'a minute ago';
+  const m = Math.round(s/60);
+  if (m < 60)            return `${m} minute${m>1?'s':''} ago`;
+  const h = Math.round(m/60);
+  if (h < 24)            return `${h} hour${h>1?'s':''} ago`;
+  const d = Math.round(h/24);
+  if (d < 30)            return `${d} day${d>1?'s':''} ago`;
+  const mo = Math.round(d/30);
+  if (mo < 12)           return `${mo} month${mo>1?'s':''} ago`;
+  return `${Math.round(mo/12)} year${mo>=24?'s':''} ago`;
+}
+function renderUpdated(){
+  const m = D.meta;
+  const el = $('#updated'), val = $('#updatedVal');
+  // prefer the precise ISO timestamp; fall back to the human string if absent
+  const t = m.generatedUTC ? new Date(m.generatedUTC) : (m.generated ? new Date(m.generated.replace(' UTC','Z').replace(' ','T')) : null);
+  if (!t || isNaN(t)){ // graceful fallback — show whatever string we have
+    if (m.generated){ val.textContent = m.generated; el.hidden = false; }
+    return;
+  }
+  const ms = t.getTime();
+  const exactLocal = t.toLocaleString(undefined, {dateStyle:'medium', timeStyle:'short'});
+  const exactUTC   = t.toISOString().slice(0,16).replace('T',' ') + ' UTC';
+  el.title = `${exactLocal}\n${exactUTC}`;
+  const tick = ()=>{ val.textContent = relTime(ms); };
+  tick(); el.hidden = false;
+  // live refresh: every 30s (cheap, and reduced-motion safe — it's just text)
+  clearInterval(renderUpdated._iv);
+  renderUpdated._iv = setInterval(tick, 30000);
 }
 
 /* =========================================================
@@ -430,6 +466,7 @@ addEventListener('keydown',e=>{
 
 /* ---- boot ---- */
 renderMeta();
+renderUpdated();
 renderDonut();
 renderDims();
 renderErr();

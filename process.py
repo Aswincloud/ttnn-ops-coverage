@@ -145,7 +145,11 @@ data = {
         "dtypes": [d for d in dts if d != "-"],
         "layouts": [l for l in lys if l != "-"],
         "mems": [m for m in mems if m != "-"],
-        "generated": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
+        # build/refresh time — set when CF Workers Builds regenerates this file
+        "generatedUTC": datetime.datetime.now(datetime.timezone.utc)
+            .replace(microsecond=0).isoformat(),
+        "generated": datetime.datetime.now(datetime.timezone.utc)
+            .strftime("%Y-%m-%d %H:%M UTC"),
     },
     "statusList": STATUS,
     "statusCounts": {s: status_counts[s] for s in STATUS},
