@@ -204,6 +204,7 @@ DOMAIN = {
     "cosh": (-3.0, 3.0),
     "lgamma": (0.5, 5.0),
     "digamma": (0.5, 5.0),
+    "prod": (0.95, 1.05),  # product over a full tile underflows to 0 outside ~1.0
 }
 
 
@@ -225,6 +226,8 @@ MANUAL_GOLDEN = {
     "i1": lambda a: torch.special.i1(a),
     "bitwise_not": lambda a: torch.bitwise_not(a.to(torch.int64)),
     "where": lambda c, t, f: torch.where(c != 0, t, f),
+    # snake_beta(x, alpha, beta) = x + sin(alpha*x)^2 / beta (no registered golden)
+    "snake_beta": lambda x, a, b: x + torch.sin(a * x) ** 2 / b,
 }
 # backward ops with no usable registered golden: (grad, *inputs) -> grad wrt first input
 MANUAL_BW_GOLDEN = {
@@ -362,7 +365,12 @@ def call_bw_golden(gf, grad, inputs, scalars, device, dtype, kw=None):
     requires_grad, which int tensors can't have. For int dtypes that return no golden,
     re-run on float-casted inputs (grad cast to float, inputs float+requires_grad), then
     truncate the resulting gradient back to int to match the device's int output."""
-    golden = call_golden(gf, (grad, *[_grad_clone(x) for x in inputs], *scalars), device, kw=kw)
+    base_in = [_grad_clone(x) for x in inputs]
+    kw = kw or {}
+    golden = call_golden(gf, (grad, *base_in, *scalars), device, kw=kw)
+    # some goldens take the keyword params positionally -> retry with values appended
+    if golden is None and kw:
+        golden = call_golden(gf, (grad, *base_in, *scalars, *kw.values()), device)
     if golden is not None or dtype not in _INT_DTYPES:
         return golden
     g_f = grad.float() if (torch.is_tensor(grad) and not grad.is_floating_point()) else grad
@@ -371,6 +379,8 @@ def call_bw_golden(gf, grad, inputs, scalars, device, dtype, kw=None):
         for x in inputs
     ]
     r = call_golden(gf, (g_f, *in_f, *scalars), device, kw=kw)
+    if r is None and kw:
+        r = call_golden(gf, (g_f, *in_f, *scalars, *kw.values()), device)
     return _trunc_int(r) if r is not None else None
 
 
@@ -394,29 +404,99 @@ def run_op(name, fn, gf, dtype, layout, mem, device):
         out = fn(a, dtype)
         return finalize(out, a_t, dtype)
 
-    # quantization: (scale, zero_point) or (in_scale, in_zp, out_scale, out_zp)
+    # quantization: (scale, zero_point) or (in_scale, in_zp, out_scale, out_zp).
+    # ttnn has no registered golden, so the affine quant math is supplied here.
     if base in QUANT and mode == "fwd":
         a_t, a = build(base, dtype, layout, mem, device)
         sc = (0.1, 0, 0.2, 0) if base == "requantize" else (0.1, 0)
         out = fn(a, *sc)
-        golden = call_golden(gf, (a_t, *sc), device, dtype)
+        af = a_t.float()
+        if base == "quantize":          # float -> int: round(x/scale) + zp
+            golden = torch.round(af / sc[0]) + sc[1]
+        elif base == "dequantize":      # int -> float: (x - zp) * scale
+            golden = (af - sc[1]) * sc[0]
+        else:                           # requantize: int -> int (deq by in_*, then q by out_*)
+            golden = torch.round((af - sc[1]) * sc[0] / sc[2]) + sc[3]
         return finalize(out, golden, dtype)
 
+    # outer product: needs two row vectors (1,1,1,W) -> (1,1,W,W), not a full tile
+    if base == "outer" and mode == "fwd":
+        ashape = (1, 1, 1, SHAPE[-1])
+        a_t, a = build("outer", dtype, layout, mem, device, shape=ashape)
+        b_t, b = build("outer", dtype, layout, mem, device, shape=ashape)
+        out = fn(a, b)
+        golden = call_golden(gf, (a_t, b_t), device, dtype)
+        return finalize(out, golden, dtype)
+
+    # unary_chain: apply a chain of unary ops (probed with a single RELU)
+    if base == "unary_chain" and mode == "fwd":
+        a_t, a = build(base, dtype, layout, mem, device)
+        out = fn(a, [ttnn.UnaryWithParam(ttnn.UnaryOpType.RELU)])
+        return finalize(out, torch.relu(a_t), dtype)
+
+    # concat_bw(grad, a, b, dim=0): grad is the concatenation of the two inputs along dim
+    if name == "concat_bw":
+        a_t, a = build("concat", dtype, layout, mem, device)
+        b_t, b = build("concat", dtype, layout, mem, device)
+        g_t, g = build("concat", dtype, layout, mem, device, shape=(2, *SHAPE[1:]))
+        out = fn(g, a, b, 0)
+
+        def _cgolden(gt, at, bt):
+            try:
+                r = gf(gt, at, bt, 0) if gf else None
+                return r[0] if isinstance(r, (list, tuple)) else r
+            except Exception:
+                return None
+
+        golden = _cgolden(g_t, _grad_clone(a_t), _grad_clone(b_t))
+        # the autograd golden can't run on int tensors; the concat gradient is purely
+        # structural (a slice of grad), so run it in float and truncate back to int.
+        if golden is None and dtype in _INT_DTYPES:
+            af = a_t.float().clone().detach().requires_grad_(True)
+            bf = b_t.float().clone().detach().requires_grad_(True)
+            r = _cgolden(g_t.float(), af, bf)
+            golden = _trunc_int(r) if r is not None else None
+        return finalize(out, golden, dtype)
+
+    # repeat_bw(grad, input, repeats): backward of repeat. Repeat dim0 x2 -> the input
+    # gradient is the sum of the two repeated copies of grad.
+    if name == "repeat_bw":
+        a_t, a = build("repeat", dtype, layout, mem, device)
+        g_t, g = build("repeat", dtype, layout, mem, device, shape=(2, *SHAPE[1:]))
+        out = fn(g, a, ttnn.Shape([2, 1, 1, 1]))
+        return finalize(out, g_t.sum(dim=0, keepdim=True), dtype)
+
     # complex backward: fn(grad, complex_input, memory_config=...). grad is real for
-    # angle/real/imag, complex for conj/polar. No torch golden wired -> acceptance only.
+    # angle/real/imag, complex for conj/polar. The torch golden returns the gradient
+    # w.r.t the complex input as [real | imag] concatenated on the last dim, so the
+    # device ComplexTensor output is compared in the same cat([real, imag], -1) form.
     if mode == "bw" and base in COMPLEX_CONSUMERS:
         mem_cfg = make_mem(mem, SHAPE, device) if isinstance(mem, str) else mem
-        _, re = build(base, dtype, layout, mem, device)
-        _, im = build(base, dtype, layout, mem, device)
+        re_ref, re = build(base, dtype, layout, mem, device)
+        im_ref, im = build(base, dtype, layout, mem, device)
         c = ttnn.complex_tensor(re, im)
         if base in ("conj", "polar"):  # grad is a ComplexTensor
-            _, gr = build(base, dtype, layout, mem, device)
-            _, gi = build(base, dtype, layout, mem, device)
+            gr_ref, gr = build(base, dtype, layout, mem, device)
+            gi_ref, gi = build(base, dtype, layout, mem, device)
             grad = ttnn.complex_tensor(gr, gi)
+            grad_ref = torch.complex(gr_ref.float(), gi_ref.float())
         else:  # angle/real/imag: grad is a real tensor
-            _, grad = build(base, dtype, layout, mem, device)
-        _ = fn(grad, c, memory_config=mem_cfg)
-        return "OK", "no-golden"
+            grad_ref, grad = build(base, dtype, layout, mem, device)
+        out = fn(grad, c, memory_config=mem_cfg)
+        o0 = out[0] if isinstance(out, (list, tuple)) else out
+        got = torch.cat([to_t(o0.real).float(), to_t(o0.imag).float()], dim=-1)
+        cin = torch.complex(re_ref.float(), im_ref.float()).detach().requires_grad_(True)
+        try:
+            golden = gf(grad_ref, cin) if gf else None
+            if isinstance(golden, (list, tuple)):
+                golden = golden[0]
+            if torch.is_tensor(golden) and torch.is_complex(golden):
+                golden = torch.cat([golden.real, golden.imag], dim=-1)
+        except Exception:
+            golden = None
+        if golden is None:
+            return "OK", "no-golden"
+        return "OK", pcc_ok(golden, got, dtype)
 
     # complex producer: complex_tensor(real, imag) -> ComplexTensor; golden = re/im roundtrip
     if base == "complex_tensor":
@@ -436,6 +516,10 @@ def run_op(name, fn, gf, dtype, layout, mem, device):
         cin = torch.complex(re_ref.float(), im_ref.float())
         if base == "polar":  # golden is torch.polar(abs, angle) (two positional args)
             golden = torch.polar(re_ref.float(), im_ref.float())
+        elif base == "is_real":  # ttnn golden calls a nonexistent torch.is_real
+            golden = (cin.imag == 0).float()
+        elif base == "is_imag":
+            golden = (cin.real == 0).float()
         else:
             golden = call_golden(gf, (cin,), device)
         if golden is None:
@@ -456,6 +540,11 @@ def run_op(name, fn, gf, dtype, layout, mem, device):
         kw = spec.get("kw", {})
         out = fn(g, *tt_in, *sc, **kw)
         golden = call_bw_golden(gf, g_t, torch_in, sc, device, dtype, kw)
+        # prod_bw (all dims) has no registered golden. The kernel computes
+        # grad_input_i = grad[0] * prod(input) / input_i (it fills with grad's first value).
+        if golden is None and name == "prod_bw":
+            x = torch_in[0].detach().double()
+            golden = (g_t.flatten()[0].double() * torch.prod(x) / x).to(torch.float32)
         return finalize(out, golden, dtype)
 
     # GLU family: fn(input, dim); golden(input, dim). dim=-1 (last dim must be even)
