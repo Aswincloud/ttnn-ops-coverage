@@ -55,11 +55,15 @@ export default {
 };
 
 async function handleFeedback(request, env, ctx) {
-  // ---- per-IP rate limit (best-effort, in-memory). CF-Connecting-IP is set at
-  // the edge and not spoofable. Keeps a single isolate from being flooded; not a
-  // hard global guarantee, which is fine for a low-volume feedback box. ----
+  // ---- per-IP rate limit via the native Rate Limiting binding (shared across
+  // isolates/edge — an in-memory counter does NOT work on Workers because
+  // requests are spread over many isolates). CF-Connecting-IP is set at the edge
+  // and not spoofable. ----
   const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
-  if (rateLimited(ip)) return json({ error: 'Too many messages — please wait a minute and try again.' }, 429);
+  if (env.FEEDBACK_LIMITER) {
+    const { success } = await env.FEEDBACK_LIMITER.limit({ key: ip });
+    if (!success) return json({ error: 'Too many messages — please wait a minute and try again.' }, 429);
+  }
 
   // ---- parse ----
   let data;
@@ -124,21 +128,6 @@ async function handleFeedback(request, env, ctx) {
   }
 
   return json({ ok: true });
-}
-
-// ---- tiny in-isolate rate limiter: 5 requests / 60s per IP ----
-const HITS = new Map(); // ip -> [timestamps]
-function rateLimited(ip) {
-  const now = Date.now();
-  const win = 60_000;
-  const arr = (HITS.get(ip) || []).filter((t) => now - t < win);
-  arr.push(now);
-  HITS.set(ip, arr);
-  // opportunistic cleanup so the map can't grow unbounded
-  if (HITS.size > 5000) {
-    for (const [k, v] of HITS) if (!v.some((t) => now - t < win)) HITS.delete(k);
-  }
-  return arr.length > 5;
 }
 
 function buildText({ typeLabel, op, email, page, message, when }) {
