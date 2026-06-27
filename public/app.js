@@ -341,15 +341,16 @@ function renderHead(){
 function prClass(pr){ return pr==null?'pr-na':pr>=0.85?'pr-hi':pr>=0.5?'pr-mid':'pr-lo'; }
 
 function compositionBar(o){
-  // bar reflects currently-active statuses only
+  // bar reflects currently-active statuses only. No trailing % here — that number
+  // (verifiable-only pass rate) read as an unlabeled orphan next to the dedicated
+  // "Pass Rate" column (overall pass rate), so the two looked contradictory
+  // (e.g. 100% on the bar vs 5.0% in the column). The bar shows the visual split;
+  // the Pass Rate column owns the number.
   const segs=ORDER.filter(s=>state.active.has(s)).map(s=>({s,v:o[s]})).filter(x=>x.v>0);
   const tot=segs.reduce((a,b)=>a+b.v,0);
-  if(!tot) return `<div class="cellbar"><div class="track"></div><span class="pr pr-na">—</span></div>`;
+  if(!tot) return `<div class="cellbar"><div class="track"></div></div>`;
   const inner=segs.map(x=>`<i style="width:${pct(x.v,tot)}%;background:${SMETA[x.s].c}" title="${SMETA[x.s].label}: ${x.v}"></i>`).join('');
-  const verif=o.PASS+o.PCC_FAIL;
-  const pr= verif? o.PASS/verif : null;
-  const prTxt = pr==null?'—':(pr*100).toFixed(0)+'%';
-  return `<div class="cellbar"><div class="track">${inner}</div><span class="pr ${prClass(pr)}">${prTxt}</span></div>`;
+  return `<div class="cellbar"><div class="track">${inner}</div></div>`;
 }
 
 function badge(v, kind){
