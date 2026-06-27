@@ -213,6 +213,8 @@ select.inp{cursor:pointer;appearance:none;background-image:url("data:image/svg+x
 /* ---------- grid sections ---------- */
 .grid{display:grid;gap:14px}
 .row-charts{grid-template-columns:340px 1fr;align-items:stretch;margin-bottom:14px}
+/* left column stacks the donut + coverage-snapshot panels, matching grid gap */
+.left-stack{display:flex;flex-direction:column;gap:14px;min-width:0}
 .dims{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
 .panel{
   background:linear-gradient(170deg,var(--card),var(--card-2));
@@ -251,6 +253,8 @@ select.inp{cursor:pointer;appearance:none;background-image:url("data:image/svg+x
 
 /* error families */
 .efam{display:flex;flex-direction:column;gap:9px}
+/* full-width Top Hard-Errors: lay the signatures out in two columns */
+.efam-2col{display:grid;grid-template-columns:1fr 1fr;gap:9px 28px}
 .efam-row{cursor:default}
 .efam-top{display:flex;align-items:baseline;gap:8px;margin-bottom:4px}
 .efam-name{font-family:var(--mono);font-size:11.5px;color:var(--text);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -356,6 +360,7 @@ footer a{color:var(--dim);text-decoration:none;border-bottom:1px dotted #3a4d6e}
 
 /* responsive */
 @media(max-width:1200px){.kpis{grid-template-columns:repeat(3,1fr)}.row-charts{grid-template-columns:1fr}.donut-wrap{justify-content:center}}
+@media(max-width:880px){.efam-2col{grid-template-columns:1fr}}
 @media(max-width:760px){
   .wrap{padding:0 13px 60px}.kpis{grid-template-columns:repeat(2,1fr)}.dims{grid-template-columns:1fr}
   header.top{margin:0 -13px 18px;padding:14px 13px 12px;gap:12px}
@@ -415,12 +420,19 @@ footer a{color:var(--dim);text-decoration:none;border-bottom:1px dotted #3a4d6e}
   <section class="kpis" id="kpis"></section>
 
   <div class="grid row-charts">
-    <div class="panel" id="donutPanel">
-      <h2><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.2-8.5"/><path d="M21 12a9 9 0 0 0-9-9v9z"/></svg>Result Distribution</h2>
-      <div class="ph-sub">All <b id="donutTotal"></b> test configurations by outcome</div>
-      <div class="donut-wrap">
-        <div class="donut" id="donut"></div>
-        <div class="legend" id="legend"></div>
+    <div class="left-stack">
+      <div class="panel" id="donutPanel">
+        <h2><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.2-8.5"/><path d="M21 12a9 9 0 0 0-9-9v9z"/></svg>Result Distribution</h2>
+        <div class="ph-sub">All <b id="donutTotal"></b> test configurations by outcome</div>
+        <div class="donut-wrap">
+          <div class="donut" id="donut"></div>
+          <div class="legend" id="legend"></div>
+        </div>
+      </div>
+      <div class="panel">
+        <h2><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Coverage Snapshot</h2>
+        <div class="ph-sub">How the <b id="snapTotal"></b> configs split between verifiable and unverifiable</div>
+        <div id="snapshot" style="display:flex;flex-direction:column;gap:12px;flex:1;justify-content:center"></div>
       </div>
     </div>
     <div class="panel">
@@ -430,17 +442,10 @@ footer a{color:var(--dim);text-decoration:none;border-bottom:1px dotted #3a4d6e}
     </div>
   </div>
 
-  <div class="grid row-charts" style="align-items:start;margin-bottom:14px">
-    <div class="panel">
-      <h2><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Coverage Snapshot</h2>
-      <div class="ph-sub">How the <b id="snapTotal"></b> configs split between verifiable and unverifiable</div>
-      <div id="snapshot" style="display:flex;flex-direction:column;gap:12px;flex:1;justify-content:center"></div>
-    </div>
-    <div class="panel">
-      <h2><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.3 3.3 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.3a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/></svg>Top Hard-Error Signatures</h2>
-      <div class="ph-sub">Device assertion &amp; build failures (<b id="errTotal"></b> total), grouped by source location</div>
-      <div class="efam" id="efam"></div>
-    </div>
+  <div class="panel" style="margin-bottom:14px">
+    <h2><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.3 3.3 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.3a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/></svg>Top Hard-Error Signatures</h2>
+    <div class="ph-sub">Device assertion &amp; build failures (<b id="errTotal"></b> total), grouped by source location</div>
+    <div class="efam efam-2col" id="efam"></div>
   </div>
 
   <div class="panel tablecard">
