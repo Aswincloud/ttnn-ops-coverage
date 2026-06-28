@@ -371,7 +371,10 @@ tr.detail td{padding:0;border-bottom:1px solid var(--border)}
 #tip .t-d{margin-top:6px;padding-top:6px;border-top:1px solid var(--border);font-size:11.5px;line-height:1.45;color:var(--faint)}
 #tip .t-pcc{font-family:var(--mono);font-size:11.5px;margin-top:6px;padding-top:6px;border-top:1px solid var(--border);color:var(--dim);display:flex;align-items:baseline;gap:7px;flex-wrap:wrap}
 #tip .t-pcc b{font-weight:600;font-variant-numeric:tabular-nums}
-#tip .t-pcc .t-thr{font-size:10px;color:var(--faint)}
+#tip .t-pcc .t-thr,#tip .t-ulp .t-thr{font-size:10px;color:var(--faint)}
+/* ULP line sits directly under PCC as part of the same group — no divider */
+#tip .t-ulp{font-family:var(--mono);font-size:11.5px;margin-top:3px;color:var(--dim);display:flex;align-items:baseline;gap:7px;flex-wrap:wrap}
+#tip .t-ulp b{font-weight:600;font-variant-numeric:tabular-nums}
 
 .empty{padding:54px 20px;text-align:center;color:var(--faint);font-size:13.5px}
 .empty svg{width:38px;height:38px;opacity:.4;margin-bottom:10px}

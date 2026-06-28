@@ -66,7 +66,7 @@ def err_signature(short):
     return m.group(1) if m else short
 
 
-rows = []                      # compact [opIdx, dtIdx, lyIdx, memIdx, statusIdx, reasonIdx, pcc|null]
+rows = []                      # compact [opIdx, dtIdx, lyIdx, memIdx, statusIdx, reasonIdx, pcc|null, ulp|null]
 ops, dts, lys, mems = [], [], [], []
 oI, dI, lI, mI = {}, {}, {}, {}
 reasons, rI = [], {}
@@ -125,14 +125,19 @@ with open(SRC, newline="") as f:
                 pcc = None
 
         # max per-element ULP error (CSV col 9). Float-only; blank otherwise.
-        # Bucket it (overall + per-dtype) for the accuracy distribution chart.
+        # Keep the raw value for the matrix hover AND bucket it (overall +
+        # per-dtype) for the accuracy distribution chart. Round to keep the
+        # payload small: 2dp under 100, integer above (ULP can reach ~8e10).
+        ulp = None
         if len(r) >= 9 and r[8].strip():
             try:
-                bi = ulp_bucket(float(r[8]))
+                uval = float(r[8])
+                ulp = round(uval, 2) if uval < 100 else round(uval)
+                bi = ulp_bucket(uval)
                 ulp_overall[bi] += 1
                 ulp_by_dtype[dt][bi] += 1
             except ValueError:
-                pass
+                ulp = None
 
         opi = intern(op, ops, oI)
         dti = intern(dt, dts, dI)
@@ -140,7 +145,7 @@ with open(SRC, newline="") as f:
         memi = intern(mem, mems, mI)
         ri = intern(short, reasons, rI)
         si = S_IDX[status]
-        rows.append([opi, dti, lyi, memi, si, ri, pcc])
+        rows.append([opi, dti, lyi, memi, si, ri, pcc, ulp])
 
         status_counts[status] += 1
         if dt != "-":

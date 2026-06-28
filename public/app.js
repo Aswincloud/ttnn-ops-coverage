@@ -463,7 +463,7 @@ function buildMatrix(op){
     if(r[0]!==opi) continue;
     const dt=D.dts[r[1]], ly=D.lys[r[2]], mem=D.mems[r[3]];
     if(dt==='-'||ly==='-'||mem==='-') continue;
-    map[dt][ly+'·'+mem]={status:D.statusList[r[4]], reason:D.reasons[r[5]], pcc:r[6]};
+    map[dt][ly+'·'+mem]={status:D.statusList[r[4]], reason:D.reasons[r[5]], pcc:r[6], ulp:r[7]};
   }
   return {dts,cols,map};
 }
@@ -481,7 +481,7 @@ function detailRow(op){
       if(!cell){ cells+=`<div class="cell c-empty"></div>`; return; }
       const m=SMETA[cell.status];
       const dark = cell.status==='SKIP'||cell.status==='NOT_IN_TTNN';
-      cells+=`<div class="cell" style="background:${m.c};color:${dark?'#cdd8ea':'#0a0e16'}" data-status="${cell.status}" data-dt="${dt}" data-cfg="${c.l}·${c.m}" data-pcc="${cell.pcc==null?'':cell.pcc}" data-reason="${(cell.reason||'').replace(/"/g,'&quot;')}">${m.short[0]}</div>`;
+      cells+=`<div class="cell" style="background:${m.c};color:${dark?'#cdd8ea':'#0a0e16'}" data-status="${cell.status}" data-dt="${dt}" data-cfg="${c.l}·${c.m}" data-pcc="${cell.pcc==null?'':cell.pcc}" data-ulp="${cell.ulp==null?'':cell.ulp}" data-reason="${(cell.reason||'').replace(/"/g,'&quot;')}">${m.short[0]}</div>`;
     });
   });
   return `<tr class="detail"><td colspan="${COLS.length}"><div class="detail-inner">
@@ -512,6 +512,16 @@ function pccLine(raw, dt, status){
   return `<div class="t-pcc">PCC <b style="color:${col}">${v.toFixed(4)}</b>`+
          `<span class="t-thr">${note}</span></div>`;
 }
+// Max per-element ULP error for the cell (informational — float dtypes only).
+// 0 = bit-exact (green, like the accuracy chart); otherwise locale-grouped so
+// the huge tail values (up to ~8e10) stay readable.
+function ulpLine(raw){
+  if(raw===''||raw==null) return '';           // ints / no-golden have no ULP
+  const v=+raw; if(!isFinite(v)) return '';
+  if(v===0) return `<div class="t-ulp">max error <b style="color:var(--pass)">bit-exact</b><span class="t-thr">0 ULP</span></div>`;
+  const shown = v<100 ? (Number.isInteger(v)?v:v.toFixed(2)) : Math.round(v).toLocaleString('en-US');
+  return `<div class="t-ulp">max error <b>${shown}</b> <span class="t-thr">ULP</span></div>`;
+}
 function bindMatrix(){
   $$('#tbody .cell:not(.c-empty)').forEach(c=>{
     c.addEventListener('mousemove',e=>{
@@ -521,7 +531,8 @@ function bindMatrix(){
       showTip(tipHead(s)+
         `<div class="t-r"><b>${c.dataset.dt}</b> · ${c.dataset.cfg}<br>`+
         (reason?reason.replace(/</g,'&lt;'):m.label)+`</div>`+
-        pccLine(c.dataset.pcc, c.dataset.dt, s),e);
+        pccLine(c.dataset.pcc, c.dataset.dt, s)+
+        ulpLine(c.dataset.ulp),e);
     });
     c.addEventListener('mouseleave',hideTip);
   });
