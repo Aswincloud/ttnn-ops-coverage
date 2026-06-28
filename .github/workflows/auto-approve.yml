@@ -1,22 +1,23 @@
 name: Auto-approve admin PRs
 
 # Automatically approve a pull request when its author is a member of the
-# Aswincloud/admins team. Two least-privilege tokens, split by what they do:
-#   - ORG_READ_TOKEN  reads org team membership (the default GITHUB_TOKEN can't).
-#   - WRITE_ACCESS_PAT posts the approval (a review needs a write-access account).
-# Both are org secrets with visibility "all", so they reach this repo.
+# Aswincloud/admins team.
 #
-# pull_request_target runs in the BASE repo context (so the secrets are available
-# even for fork PRs). This is safe here: the job never checks out or runs the
+# Identity: the "Aswincloud Bot" GitHub App (org-owned automation), via a
+# short-lived installation token minted per run. One token does both jobs —
+# reads org team membership (needs Members: Read) and posts the approval (needs
+# Pull requests: write) — so there are no long-lived personal PATs to rotate,
+# and reviews show as `aswincloud-bot[bot]`. Secrets: APP_ID, APP_PRIVATE_KEY.
+#
+# pull_request_target runs in the BASE repo context (so the secrets are
+# available even for fork PRs). Safe here: the job never checks out or runs the
 # PR's code — it only calls the GitHub API.
 
 on:
   pull_request_target:
     types: [opened, reopened, ready_for_review, synchronize]
 
-permissions:
-  contents: read
-  pull-requests: write
+permissions: {}   # the App token carries the perms; the built-in token needs none
 
 # One run per PR; a newer event supersedes an in-flight one.
 concurrency:
@@ -29,14 +30,22 @@ jobs:
     # Skip drafts — approve once it's a real review candidate.
     if: github.event.pull_request.draft == false
     steps:
-      # 1) Read-only: is the PR author an ACTIVE member of the admins team?
-      #    Uses ORG_READ_TOKEN — a least-privilege token scoped to read org
-      #    membership (the default GITHUB_TOKEN can't, and we don't want the
-      #    write PAT doing the lookup).
+      # Mint a short-lived installation token for the Aswincloud Bot app.
+      # owner (no repositories:) => an org-level token that can read org teams
+      # AND act on this org's repos.
+      - name: Mint app token
+        id: app
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
+      # 1) Is the PR author an ACTIVE member of the admins team?
       - name: Check admins-team membership
         id: member
         env:
-          GH_TOKEN: ${{ secrets.ORG_READ_TOKEN }}
+          GH_TOKEN: ${{ steps.app.outputs.token }}
           AUTHOR:   ${{ github.event.pull_request.user.login }}
           ORG:      Aswincloud
           TEAM:     admins
@@ -52,41 +61,32 @@ jobs:
             echo "is_admin=false" >> "$GITHUB_OUTPUT"
           fi
 
-      # 2) Write: approve the PR. Only runs when step 1 said the author is an
-      #    admin. Uses WRITE_ACCESS_PAT — the approving review must come from an
-      #    account with write access.
+      # 2) Approve the PR — only when the author is an admin. The bot is never
+      #    the PR author, so there's no self-approval case to handle.
       - name: Approve the PR
         if: steps.member.outputs.is_admin == 'true'
         env:
-          GH_TOKEN: ${{ secrets.WRITE_ACCESS_PAT }}
+          GH_TOKEN: ${{ steps.app.outputs.token }}
           REPO:     ${{ github.repository }}
           PR:       ${{ github.event.pull_request.number }}
           AUTHOR:   ${{ github.event.pull_request.user.login }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          # the app's reviews are authored by "<app-slug>[bot]"
+          ME:       ${{ steps.app.outputs.app-slug }}[bot]
           ORG:      Aswincloud
           TEAM:     admins
         run: |
           set -euo pipefail
 
-          # Don't stack reviews: if the token's own user already approved this
-          # exact commit, stop. (Re-runs on `synchronize` then become no-ops.)
-          ME="$(gh api user --jq '.login')"
+          # Don't stack reviews: if the bot already approved this exact commit,
+          # stop. (Re-runs on `synchronize` then become no-ops.)
           already="$(gh api "repos/${REPO}/pulls/${PR}/reviews" --paginate \
             --jq "[.[] | select(.user.login==\"${ME}\" and .state==\"APPROVED\" and .commit_id==\"${HEAD_SHA}\")] | length")"
           if [ "${already}" -gt 0 ]; then
-            echo "↷ Already approved ${HEAD_SHA} as @${ME} — skipping."
-            exit 0
-          fi
-
-          # GitHub forbids approving your OWN PR, so if the write token's user
-          # is the author, fall back to a friendly comment instead of failing.
-          if [ "${ME}" = "${AUTHOR}" ]; then
-            echo "↷ Token user (@${ME}) is the PR author — GitHub blocks self-approval; leaving a note."
-            gh pr comment "${PR}" --repo "${REPO}" \
-              --body "Auto-approve skipped: @${AUTHOR} is an admin, but the bot account is the author and GitHub doesn't allow approving your own PR." || true
+            echo "↷ Already approved ${HEAD_SHA} as ${ME} — skipping."
             exit 0
           fi
 
           gh pr review "${PR}" --repo "${REPO}" --approve \
             --body "Auto-approved: @${AUTHOR} is a member of @${ORG}/${TEAM}."
-          echo "✓ Approved PR #${PR} as @${ME}."
+          echo "✓ Approved PR #${PR} as ${ME}."
