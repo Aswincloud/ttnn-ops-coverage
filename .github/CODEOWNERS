@@ -1,10 +1,9 @@
 # ──────────────────────────────────────────────────────────────────────────
 # CODEOWNERS — who is requested for review on changes to this repository.
 #
-# Order matters: the LAST matching pattern for a given path wins. The catch-all
-# below assigns every file; the path-specific blocks then refine ownership for
-# the areas that warrant a closer eye. GitHub also enforces these as required
-# reviewers when "Require review from Code Owners" is on for the branch.
+# One catch-all: all four owners own every file uniformly. (GitHub also
+# enforces these as required reviewers when "Require review from Code Owners"
+# is enabled for the branch — not currently on, so this is advisory today.)
 #
 # Owners:
 #   @Aswinmcw                              maintainer
@@ -13,26 +12,4 @@
 #   @Aswincloud/users-global-write-access  write-access team
 # ──────────────────────────────────────────────────────────────────────────
 
-# Default — everything in the repo.
-*                       @Aswinmcw @Aswin-coder @Aswincloud/admins @Aswincloud/users-global-write-access
-
-# ── Data + the pipeline that turns it into the dashboard ──────────────────
-# ops.csv is the single source of truth; process.py is its transformer.
-/ops.csv                @Aswinmcw @Aswin-coder @Aswincloud/admins
-/process.py             @Aswinmcw @Aswin-coder @Aswincloud/admins
-/eltwise_support_probe.py  @Aswinmcw @Aswin-coder @Aswincloud/admins
-
-# ── Front end (dashboard) ─────────────────────────────────────────────────
-/public/                @Aswinmcw @Aswin-coder @Aswincloud/admins @Aswincloud/users-global-write-access
-/worker/                @Aswinmcw @Aswin-coder @Aswincloud/admins
-
-# ── CI / automation / repo config ─────────────────────────────────────────
-/.github/               @Aswinmcw @Aswin-coder @Aswincloud/admins
-/scripts/               @Aswinmcw @Aswin-coder @Aswincloud/admins
-/wrangler.jsonc         @Aswinmcw @Aswin-coder @Aswincloud/admins
-/eslint.config.js       @Aswinmcw @Aswin-coder @Aswincloud/admins
-/package.json           @Aswinmcw @Aswin-coder @Aswincloud/admins
-
-# ── Docs ──────────────────────────────────────────────────────────────────
-/README.md              @Aswinmcw @Aswin-coder @Aswincloud/admins @Aswincloud/users-global-write-access
-/PROBE.md               @Aswinmcw @Aswin-coder @Aswincloud/admins @Aswincloud/users-global-write-access
+*   @Aswinmcw @Aswin-coder @Aswincloud/admins @Aswincloud/users-global-write-access
