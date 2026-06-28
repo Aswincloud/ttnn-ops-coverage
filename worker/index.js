@@ -127,7 +127,95 @@ async function handleFeedback(request, env, ctx) {
     return json({ error: 'Could not send your message right now. Please try again later.' }, 502);
   }
 
+  // ---- acknowledgement to the submitter (best-effort) ----
+  // If they left a valid email, send a confirmation back. This is fire-and-
+  // forget via waitUntil: the user's success response never waits on it, and a
+  // failed ack must NOT fail the feedback (their message already went through).
+  if (email) {
+    const ack = sendAck(env, { email, from, typeLabel, op, message, when })
+      .catch((e) => console.error(`ack send failed: ${e}`));
+    if (ctx && ctx.waitUntil) ctx.waitUntil(ack);
+  }
+
   return json({ ok: true });
+}
+
+// Confirmation email to the person who submitted feedback. Reply-to points at
+// the maintainer so a reply from them reaches a human, not the no-reply sender.
+async function sendAck(env, { email, from, typeLabel, op, message, when }) {
+  const to = env.FEEDBACK_TO || DEFAULT_TO;
+  const payload = {
+    from,
+    to: [email],
+    reply_to: to,
+    subject: 'We got your feedback — TTNN Ops Coverage',
+    html: buildAckHtml({ typeLabel, op, message, when }),
+    text: buildAckText({ typeLabel, op, message, when }),
+  };
+  const res = await fetch(RESEND_URL, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${env.RESEND_API_KEY}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`${res.status} ${body}`);
+  }
+}
+
+function buildAckText({ typeLabel, op, message, when }) {
+  return [
+    'Thanks — we received your feedback on the TTNN Ops Coverage dashboard.',
+    '',
+    "It's been sent to the maintainer. We read everything, but can't promise an",
+    'individual reply. If a response is needed, we\'ll get back to you at this address.',
+    '',
+    `Type:    ${typeLabel}`,
+    op ? `Op:      ${op}` : null,
+    `Sent:    ${when}`,
+    '',
+    '--- your message ---',
+    message,
+    '',
+    '— TTNN Ops Coverage',
+    'https://ttnn-ops-coverage.aswincloud.com/',
+  ].filter(Boolean).join('\n');
+}
+
+function buildAckHtml({ typeLabel, op, message, when }) {
+  const row = (k, v) =>
+    v ? `<tr><td style="padding:5px 12px;color:#64748b;white-space:nowrap;vertical-align:top">${esc(k)}</td><td style="padding:5px 12px;color:#0f172a">${esc(v)}</td></tr>` : '';
+  return `<!doctype html><html><head><meta charset="utf-8"></head>
+  <body style="margin:0;background:#f1f5f9;font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#0f172a">
+    <div style="max-width:560px;margin:0 auto;padding:24px">
+      <div style="background:#fff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden">
+        <div style="background:linear-gradient(135deg,#065f46,#10b981);padding:18px 22px;color:#fff">
+          <div style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;opacity:.85">TTNN Ops Coverage</div>
+          <div style="font-size:18px;font-weight:700;margin-top:3px">Thanks — we got your feedback</div>
+        </div>
+        <div style="padding:18px 22px;font-size:14px;line-height:1.6;color:#334155">
+          Your message has been sent to the maintainer. We read everything, though we
+          can't promise an individual reply. If a response is needed, we'll reach you
+          at this address.
+        </div>
+        <table style="width:100%;border-collapse:collapse;font-size:13px;border-top:1px solid #e2e8f0">
+          ${row('Type', typeLabel)}
+          ${row('Op', op)}
+          ${row('Sent', when)}
+        </table>
+        <div style="padding:16px 22px;border-top:1px solid #e2e8f0">
+          <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Your message</div>
+          <div style="white-space:pre-wrap;line-height:1.55;font-size:14px;color:#0f172a">${esc(message)}</div>
+        </div>
+        <div style="padding:12px 22px;border-top:1px solid #e2e8f0;color:#94a3b8;font-size:11px">
+          <a href="https://ttnn-ops-coverage.aswincloud.com/" style="color:#3b82f6;text-decoration:none">ttnn-ops-coverage.aswincloud.com</a>
+        </div>
+      </div>
+    </div>
+  </body></html>`;
 }
 
 function buildText({ typeLabel, op, email, page, message, when }) {
