@@ -360,6 +360,35 @@ with open(OUT, "w") as f:
     f.write(";")
 
 print(f"wrote {OUT}  ({os.path.getsize(OUT)/1024:.0f} KB)")
+
+
+# --- live README badges (derived 100% from the CSV, never hand-edited) -------
+# Shields "endpoint" JSON: the README points img.shields.io/endpoint?url=… at
+# these, so the badge numbers always reflect ops.csv. Written into public/ so
+# they ship to the live domain; gitignored like data.js (a build artifact).
+def write_badges():
+    badge_dir = os.path.join("public", "badges")
+    os.makedirs(badge_dir, exist_ok=True)
+    total = len(rows)
+    sc = status_counts
+    pass_rate = (sc.get("PASS", 0) / total * 100) if total else 0.0
+    grp = lambda n: f"{n:,}"  # noqa: E731 — thousands separator
+    badges = {
+        "configs":  {"label": "configs",   "message": grp(total),          "color": "3b82f6"},
+        "ops":      {"label": "ops",        "message": grp(len(ops)),       "color": "3b82f6"},
+        "passrate": {"label": "pass rate",  "message": f"{pass_rate:.1f}%", "color": "10b981"},
+        "pass":     {"label": "pass",       "message": grp(sc.get("PASS", 0)),     "color": "10b981"},
+        "pccfail":  {"label": "pcc fail",   "message": grp(sc.get("PCC_FAIL", 0)), "color": "f59e0b"},
+        "error":    {"label": "error",      "message": grp(sc.get("ERROR", 0)),    "color": "ef4444"},
+    }
+    for name, body in badges.items():
+        body["schemaVersion"] = 1
+        with open(os.path.join(badge_dir, name + ".json"), "w") as bf:
+            json.dump(body, bf, separators=(",", ":"))
+    print(f"wrote {len(badges)} badges -> {badge_dir}/")
+
+
+write_badges()
 print("status:", dict(status_counts))
 print("ops:", len(ops), "rows:", len(rows), "reasons:", len(reasons))
 print("worst 5 ops:", [(o['op'], o['passRate']) for o in op_rows[:5]])

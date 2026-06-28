@@ -51,13 +51,15 @@ try {
   fail(`data.js: failed to evaluate — ${e.message}`);
 }
 
-// --- 3: data.js must be a gitignored build artifact, never committed ------
+// --- 3: build artifacts must stay gitignored, never committed -------------
+// data.js + the README badge JSON are both generated from ops.csv on every
+// build. Committing either would let a stale snapshot drift from the CSV, so
+// `git ls-files` (TRACKED files) must list neither.
 try {
-  // `git ls-files` lists TRACKED files; data.js must not appear.
-  const tracked = execFileSync("git", ["ls-files", "public/data.js"],
+  const tracked = execFileSync("git", ["ls-files", "public/data.js", "public/badges"],
     { cwd: ROOT, stdio: "pipe" }).toString().trim();
-  if (tracked) fail("public/data.js is tracked by git — it must stay gitignored (generated from ops.csv)");
-  else ok("public/data.js is not tracked (correctly gitignored)");
+  if (tracked) fail(`generated build artifact(s) tracked by git — must stay gitignored (generated from ops.csv):\n     ${tracked.split("\n").join("\n     ")}`);
+  else ok("public/data.js + public/badges are not tracked (correctly gitignored)");
 } catch {
   // not a git repo (e.g. tarball CI) — skip rather than fail
   ok("git not available — skipping tracked-file check");

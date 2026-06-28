@@ -1,20 +1,23 @@
 # TTNN Ops Coverage Matrix
 
-An interactive, zero-dependency dashboard for the **TTNN (Tenstorrent) operation test matrix** — visualizing how 299 operations behave across every `dtype × layout × memory` configuration, and how numerically accurate each result is.
+An interactive, zero-dependency dashboard for the **TTNN (Tenstorrent) operation test matrix** — visualizing how every operation behaves across every `dtype × layout × memory` configuration, and how numerically accurate each result is.
 
 Built to deploy as a **Cloudflare Workers Static Assets** site. The entire front end is hand-rolled HTML/CSS/SVG with no runtime libraries, so it loads instantly and works fully offline.
 
 **Live:** https://ttnn-ops-coverage.aswincloud.com/
 
-![configs](https://img.shields.io/badge/configs-23%2C920-3b82f6) ![ops](https://img.shields.io/badge/ops-299-3b82f6) ![pass rate](https://img.shields.io/badge/pass%20rate-45.3%25-10b981) ![pass](https://img.shields.io/badge/pass-10%2C827-10b981) ![pcc fail](https://img.shields.io/badge/pcc%20fail-4%2C742-f59e0b) ![error](https://img.shields.io/badge/error-8%2C351-ef4444)
+<!-- Badges are live: process.py emits public/badges/*.json from ops.csv on every
+     build, and shields.io renders them via its endpoint API — so the numbers
+     below always reflect the current data, never a hand-typed snapshot. -->
+![configs](https://img.shields.io/endpoint?url=https%3A%2F%2Fttnn-ops-coverage.aswincloud.com%2Fbadges%2Fconfigs.json) ![ops](https://img.shields.io/endpoint?url=https%3A%2F%2Fttnn-ops-coverage.aswincloud.com%2Fbadges%2Fops.json) ![pass rate](https://img.shields.io/endpoint?url=https%3A%2F%2Fttnn-ops-coverage.aswincloud.com%2Fbadges%2Fpassrate.json) ![pass](https://img.shields.io/endpoint?url=https%3A%2F%2Fttnn-ops-coverage.aswincloud.com%2Fbadges%2Fpass.json) ![pcc fail](https://img.shields.io/endpoint?url=https%3A%2F%2Fttnn-ops-coverage.aswincloud.com%2Fbadges%2Fpccfail.json) ![error](https://img.shields.io/endpoint?url=https%3A%2F%2Fttnn-ops-coverage.aswincloud.com%2Fbadges%2Ferror.json)
 
 ---
 
 ## What it shows
 
 The source data (`ops.csv`) is produced by [`eltwise_support_probe.py`](PROBE.md) — a
-sweep of **23,920 test configurations**: each of 299 ops run across 8 dtypes × 2 layouts
-× 5 memory configs (interleaved `dram`/`l1` + sharded `height`/`width`/`block`). For every
+sweep over **every op × dtype × layout × memory configuration** (8 dtypes × 2 layouts ×
+5 memory configs: interleaved `dram`/`l1` + sharded `height`/`width`/`block`). For every
 config the probe records whether the op ran, whether the output matched a torch golden, the
 **input range** fed to it, the **PCC** vs the golden, and the max per-element **ULP** error.
 Each run's raw `pcc_or_reason` column is classified into a clean status taxonomy:

@@ -81,7 +81,7 @@ Default tensor shape is a single tile `1×1×32×32` (keeps the sweep fast). Ops
 need a larger tile-aligned shape are overridden in `PER_OP_SHAPE` (e.g. the GLU
 family uses `1×1×32×64` because it splits the last dim in half).
 
-Total = `299 ops × 8 dtypes × 2 layouts × 5 mems = 23,920 rows`.
+One row per `op × dtype × layout × mem` combination (`N ops × 8 × 2 × 5`).
 
 ---
 
