@@ -66,10 +66,11 @@ def err_signature(short):
     return m.group(1) if m else short
 
 
-rows = []                      # compact [opIdx, dtIdx, lyIdx, memIdx, statusIdx, reasonIdx, pcc|null, ulp|null]
+rows = []                      # compact [opIdx, dtIdx, lyIdx, memIdx, statusIdx, reasonIdx, pcc|null, ulp|null, inputIdx]
 ops, dts, lys, mems = [], [], [], []
 oI, dI, lI, mI = {}, {}, {}, {}
 reasons, rI = [], {}
+inputs, inI = [], {}            # interned input-range strings (only ~7 distinct)
 
 status_counts = Counter()
 dim_counts = {"dtype": defaultdict(Counter), "layout": defaultdict(Counter), "mem": defaultdict(Counter)}
@@ -139,13 +140,18 @@ with open(SRC, newline="") as f:
             except ValueError:
                 ulp = None
 
+        # input value range fed to the tensors (CSV col 7). Constant per
+        # (op,dtype); only ~7 distinct strings, so intern and store the index.
+        inp = r[6].strip() if len(r) >= 7 else ""
+        ini = intern(inp, inputs, inI) if inp else -1
+
         opi = intern(op, ops, oI)
         dti = intern(dt, dts, dI)
         lyi = intern(ly, lys, lI)
         memi = intern(mem, mems, mI)
         ri = intern(short, reasons, rI)
         si = S_IDX[status]
-        rows.append([opi, dti, lyi, memi, si, ri, pcc, ulp])
+        rows.append([opi, dti, lyi, memi, si, ri, pcc, ulp, ini])
 
         status_counts[status] += 1
         if dt != "-":
@@ -218,6 +224,7 @@ data = {
     "dims": {k: dim_obj(v) for k, v in dim_counts.items()},
     "ops": ops, "dts": dts, "lys": lys, "mems": mems,
     "reasons": reasons,
+    "inputs": inputs,
     "rows": rows,
     "opLeaderboard": op_rows,
     "errFamilies": err_top,
