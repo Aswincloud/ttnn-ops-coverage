@@ -40,6 +40,15 @@ const esc = (s) =>
 // crude email sanity check — we never trust it for auth, only for reply-to
 const looksEmail = (s) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
 
+// Re-label a "Name <addr@host>" (or bare "addr@host") with a new display name,
+// keeping the address intact. Used so the ack mail can carry its own sender
+// name without duplicating the verified address.
+const withName = (from, name) => {
+  const m = String(from).match(/<([^>]+)>/);
+  const addr = (m ? m[1] : from).trim();
+  return `${name} <${addr}>`;
+};
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -144,8 +153,12 @@ async function handleFeedback(request, env, ctx) {
 // the maintainer so a reply from them reaches a human, not the no-reply sender.
 async function sendAck(env, { email, from, typeLabel, op, message, when }) {
   const to = env.FEEDBACK_TO || DEFAULT_TO;
+  // The shared `from` carries the "TTNN Ops Feedback" name, which is meant for
+  // mail coming IN to the maintainer. For a confirmation going OUT to the
+  // submitter, present it as "TTNN Ops Coverage" — same verified address, a
+  // sender name that matches the email's own heading.
   const payload = {
-    from,
+    from: withName(from, 'TTNN Ops Coverage'),
     to: [email],
     reply_to: to,
     subject: 'We got your feedback — TTNN Ops Coverage',
