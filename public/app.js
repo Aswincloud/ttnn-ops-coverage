@@ -474,9 +474,10 @@ function pccLine(raw, dt, status){
   // threshold doesn't apply, and even for floats this keeps the number consistent
   // with the cell colour (green only when the config actually passed).
   const col = status==='PASS' ? 'var(--pass)' : 'var(--err)';
+  const thr=(PCC_THR[dt]??0.99).toFixed(2);  // 2dp so bf4's 0.90 doesn't render as "0.9"
   const note = INT_DT.has(dt)
     ? `correlation · ${dt} graded by exact match`     // PCC is informational for ints
-    : `vs ≥${PCC_THR[dt]??0.99} threshold (${dt})`;
+    : `vs ≥${thr} threshold (${dt})`;
   return `<div class="t-pcc">PCC <b style="color:${col}">${v.toFixed(4)}</b>`+
          `<span class="t-thr">${note}</span></div>`;
 }
