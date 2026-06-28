@@ -665,8 +665,18 @@ def run_op(name, fn, gf, dtype, layout, mem, device):
     return finalize(out, golden, dtype)
 
 
-CSV_PATH = os.path.join(os.path.dirname(__file__), "eltwise_support_matrix.csv")
+_HERE = os.path.dirname(__file__)
+CSV_PATH = os.path.join(_HERE, "eltwise_support_matrix.csv")  # stable "latest" path
+HISTORY_DIR = os.path.join(_HERE, "history")  # per-day dated CSVs live here
 HEADER = ["op", "dtype", "layout", "mem", "accepted", "pcc_or_reason", "input_range", "pcc", "ulp"]
+
+
+def dated_csv_path(day=None):
+    """Path for a per-day CSV, e.g. history/eltwise_support_matrix_2026-06-28.csv."""
+    import datetime
+
+    day = day or datetime.date.today().isoformat()
+    return os.path.join(HISTORY_DIR, f"eltwise_support_matrix_{day}.csv")
 
 
 def input_range(name, dtype):
@@ -728,15 +738,31 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--op", default=None, help="probe a single op and append")
     ap.add_argument("--list-ops", action="store_true")
+    ap.add_argument(
+        "--dated",
+        action="store_true",
+        help="write a per-day CSV under history/ (eltwise_support_matrix_YYYY-MM-DD.csv) "
+        "and also refresh the stable eltwise_support_matrix.csv",
+    )
+    ap.add_argument("--out", default=None, help="explicit output CSV path (overrides default)")
     args = ap.parse_args()
 
     if args.list_ops:
         print(" ".join(OPS))
         return
 
+    # resolve output path: --out wins, then --dated (per-day file), else stable default
+    if args.out:
+        out_path = args.out
+    elif args.dated:
+        os.makedirs(HISTORY_DIR, exist_ok=True)
+        out_path = dated_csv_path()
+    else:
+        out_path = CSV_PATH
+
     mode = "a" if args.op else "w"
     device = ttnn.open_device(device_id=0)
-    f = open(CSV_PATH, mode, newline="")
+    f = open(out_path, mode, newline="")
     w = csv.writer(f)
     if mode == "w":
         w.writerow(HEADER)
@@ -748,6 +774,13 @@ def main():
     finally:
         f.close()
         ttnn.close_device(device)
+
+    # keep a stable "latest" copy so a dashboard can always read one fixed path
+    if args.dated and mode == "w" and out_path != CSV_PATH:
+        import shutil
+
+        shutil.copyfile(out_path, CSV_PATH)
+    print(f"wrote {out_path}", flush=True)
 
 
 if __name__ == "__main__":
