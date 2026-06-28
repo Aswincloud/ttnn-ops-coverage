@@ -62,7 +62,13 @@ def make_mem(token, shape, device):
         return ttnn.DRAM_MEMORY_CONFIG
     if token == "l1":
         return ttnn.L1_MEMORY_CONFIG
-    H, W = shape[-2], shape[-1]
+    # a sharded tensor flattens to 2D: physical height = product of all leading dims,
+    # physical width = last dim. Using shape[-2] alone breaks for >1 leading dim
+    # (e.g. a (2,1,32,32) gradient has physical height 64, not 32).
+    H = 1
+    for d in shape[:-1]:
+        H *= d
+    W = shape[-1]
     return ttnn.create_sharded_memory_config(
         shape=(H, W),
         core_grid=ttnn.CoreGrid(y=1, x=1),
@@ -290,29 +296,43 @@ def call_golden(gf, args, device, dtype=None, kw=None):
     return r
 
 
+def _corr(g, o):
+    """Pearson correlation of two flat tensors, or None when undefined (zero variance)."""
+    try:
+        gc, oc = g - g.mean(), o - o.mean()
+        denom = gc.norm() * oc.norm()
+        if denom == 0:
+            return None
+        return max(-1.0, min(1.0, float((gc @ oc) / denom)))
+    except Exception:
+        return None
+
+
 def pcc_ok(golden, got, dtype):
+    """Return (verdict, pcc) where pcc is the numeric Pearson correlation (or None)."""
     try:
         g = golden.to(torch.float32).flatten()
         o = got.to(torch.float32).flatten()
         if g.shape != o.shape:
-            return "shape?"
+            return "shape?", None
         if dtype in _INT_DTYPES:
-            return "pass" if torch.equal(golden.to(torch.int64), got.to(torch.int64)) else "fail"
+            verdict = "pass" if torch.equal(golden.to(torch.int64), got.to(torch.int64)) else "fail"
+            return verdict, _corr(g, o)
         mask = torch.isfinite(g) & torch.isfinite(o)
         if mask.sum() == 0:
-            return "nan"
+            return "nan", None
         g, o = g[mask], o[mask]
         if g.numel() < 2 or torch.allclose(g, o, atol=1e-2, rtol=1e-2):
-            return "pass"
+            return "pass", _corr(g, o)
         gc, oc = g - g.mean(), o - o.mean()
         denom = gc.norm() * oc.norm()
         if denom == 0:
-            return "pass" if torch.allclose(g, o, atol=1e-2) else "fail"
+            return ("pass" if torch.allclose(g, o, atol=1e-2) else "fail"), None
         pcc = float((gc @ oc) / denom)
         thr = {ttnn.bfloat8_b: 0.97, ttnn.bfloat4_b: 0.90}.get(dtype, 0.99)
-        return "pass" if pcc >= thr else f"fail({pcc:.3f})"
+        return ("pass" if pcc >= thr else f"fail({pcc:.3f})"), pcc
     except Exception as e:
-        return f"pcc_err:{str(e)[:30]}"
+        return f"pcc_err:{str(e)[:30]}", None
 
 
 def build_args(base, dtype, layout, mem, device):
@@ -340,10 +360,11 @@ def finalize(out, golden, dtype):
         out = out[0]
     got = to_t(out)
     if golden is None:
-        return "OK", "no-golden"
+        return "OK", "no-golden", None
     if isinstance(golden, (list, tuple)):
         golden = golden[0]
-    return "OK", pcc_ok(golden, got, dtype)
+    verdict, pcc = pcc_ok(golden, got, dtype)
+    return "OK", verdict, pcc
 
 
 def _grad_clone(x):
@@ -495,8 +516,9 @@ def run_op(name, fn, gf, dtype, layout, mem, device):
         except Exception:
             golden = None
         if golden is None:
-            return "OK", "no-golden"
-        return "OK", pcc_ok(golden, got, dtype)
+            return "OK", "no-golden", None
+        verdict, pcc = pcc_ok(golden, got, dtype)
+        return "OK", verdict, pcc
 
     # complex producer: complex_tensor(real, imag) -> ComplexTensor; golden = re/im roundtrip
     if base == "complex_tensor":
@@ -505,7 +527,8 @@ def run_op(name, fn, gf, dtype, layout, mem, device):
         out = ttnn.complex_tensor(re, im)
         got = _complex_to_torch(out)
         golden = torch.complex(re_ref.float(), im_ref.float())
-        return "OK", pcc_ok(_real_view(golden), _real_view(got), dtype)
+        verdict, pcc = pcc_ok(_real_view(golden), _real_view(got), dtype)
+        return "OK", verdict, pcc
 
     # complex consumers: take one ComplexTensor built from (real, imag)
     if base in COMPLEX_CONSUMERS:
@@ -523,8 +546,9 @@ def run_op(name, fn, gf, dtype, layout, mem, device):
         else:
             golden = call_golden(gf, (cin,), device)
         if golden is None:
-            return "OK", "no-golden"
-        return "OK", pcc_ok(_real_view(golden), _real_view(_complex_to_torch(out)), dtype)
+            return "OK", "no-golden", None
+        verdict, pcc = pcc_ok(_real_view(golden), _real_view(_complex_to_torch(out)), dtype)
+        return "OK", verdict, pcc
 
     # backward ops with an op-specific signature (extra tensors / trailing scalars).
     # checked before the reduction smoke path so max_bw/min_bw use their real signature.
@@ -601,13 +625,30 @@ def run_op(name, fn, gf, dtype, layout, mem, device):
 
 
 CSV_PATH = os.path.join(os.path.dirname(__file__), "eltwise_support_matrix.csv")
-HEADER = ["op", "dtype", "layout", "mem", "accepted", "pcc_or_reason"]
+HEADER = ["op", "dtype", "layout", "mem", "accepted", "pcc_or_reason", "input_range", "pcc"]
+
+
+def input_range(name, dtype):
+    """The value range fed to the tensors for this (op, dtype), mirroring build()."""
+    base = name
+    if name.endswith("_bw"):
+        base = name[:-3]
+    elif name.endswith("_"):
+        base = name[:-1]
+    if dtype in _INT_DTYPES:
+        return "[1..49]"  # torch.randint(1, 50) -> integers 1..49 inclusive
+    lo, hi = DOMAIN.get(base, (0.1, 0.85))
+    return f"[{lo}..{hi}]"
+
+
+def _fmt_pcc(pcc):
+    return "" if pcc is None else f"{pcc:.6f}"
 
 
 def probe_one(name, w, f, device):
     fn = getattr(ttnn, name, None)
     if fn is None or not callable(fn):
-        w.writerow([name, "-", "-", "-", "NO_OP", "not in ttnn"])
+        w.writerow([name, "-", "-", "-", "NO_OP", "not in ttnn", "", ""])
         f.flush()
         return
     try:
@@ -621,15 +662,16 @@ def probe_one(name, w, f, device):
                 # alone (--op) or as part of a full run, independent of iteration order.
                 seed = zlib.crc32(f"{name}/{dn}/{ln}/{mn}".encode()) ^ _BASE_SEED
                 torch.manual_seed(seed)
+                pcc = None
                 try:
-                    acc, detail = run_op(name, fn, gf, dtype, layout, mem, device)
+                    acc, detail, pcc = run_op(name, fn, gf, dtype, layout, mem, device)
                 except Exception as e:
                     # collapse to a single CSV-safe line; drop the volatile backtrace
                     # (pointer addresses change every process run -> non-deterministic).
                     acc = "FAIL"
                     msg = str(e).split("backtrace")[0]
                     detail = " | ".join(s.strip() for s in msg.strip().splitlines() if s.strip()).rstrip(" |")
-                w.writerow([name, dn, ln, mn, acc, detail])
+                w.writerow([name, dn, ln, mn, acc, detail, input_range(name, dtype), _fmt_pcc(pcc)])
                 f.flush()
 
 
