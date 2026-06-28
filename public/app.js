@@ -79,7 +79,13 @@ function renderMeta(){
   // drop cards explicitly flagged skipIfZero===0 (e.g. No-Golden when absent)
   const shown = cards.filter(c=>!('skipIfZero' in c) || c.skipIfZero>0);
   const kpis=$('#kpis');
-  kpis.style.gridTemplateColumns=`repeat(${shown.length},1fr)`;
+  // Publish the card count as a CSS var instead of hard-setting grid-template-columns
+  // inline. An inline grid-template-columns would beat every @media rule by
+  // specificity (it did — that single line was what broke the mobile layout: 5
+  // un-shrinkable cards forced a ~600px floor). With a var, the base CSS lays out
+  // `repeat(var(--kpi-cols),1fr)` on desktop while the mobile media queries are
+  // free to override the column count (2-up, then 1-up).
+  kpis.style.setProperty('--kpi-cols', shown.length);
   kpis.innerHTML = shown.map(c=>`
     <div class="kpi ${c.cls}" style="--accent-2:${c.color}">
       <div class="lab"><svg viewBox="0 0 24 24" fill="none" stroke="${c.color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICO[c.ico]}</svg>${c.lab}</div>

@@ -190,7 +190,7 @@ select.inp{cursor:pointer;appearance:none;background-image:url("data:image/svg+x
 @media(max-width:760px){.modal{padding:20px 16px 16px}.modal-foot{flex-direction:column;align-items:stretch}.modal-actions{justify-content:flex-end}}
 
 /* ---------- kpi ---------- */
-.kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:13px;margin-bottom:18px}
+.kpis{display:grid;grid-template-columns:repeat(var(--kpi-cols,6),1fr);gap:13px;margin-bottom:18px}
 .kpi{
   background:linear-gradient(165deg,var(--card),var(--card-2));
   border:1px solid var(--border);border-radius:var(--r);padding:15px 16px 14px;
@@ -359,17 +359,30 @@ footer{margin-top:26px;text-align:center;color:var(--faint);font-size:11.5px;fon
 footer a{color:var(--dim);text-decoration:none;border-bottom:1px dotted #3a4d6e}
 
 /* responsive */
-@media(max-width:1200px){.kpis{grid-template-columns:repeat(3,1fr)}.row-charts{grid-template-columns:1fr}.donut-wrap{justify-content:center}}
+@media(max-width:1200px){.kpis{--kpi-cols:3 !important}.row-charts{grid-template-columns:1fr}.donut-wrap{justify-content:center}}
 @media(max-width:880px){.efam-2col{grid-template-columns:1fr}}
 @media(max-width:760px){
-  .wrap{padding:0 13px 60px}.kpis{grid-template-columns:repeat(2,1fr)}.dims{grid-template-columns:1fr}
+  .wrap{padding:0 13px 60px}.kpis{--kpi-cols:2 !important}.dims{grid-template-columns:1fr}
   header.top{margin:0 -13px 18px;padding:14px 13px 12px;gap:12px}
   #search{width:100%}.searchbox{width:100%}.spacer{display:none}
   .brand h1{font-size:18px}.kpi .val{font-size:25px}
-  /* the table overflows the viewport here, so re-enable horizontal scroll.
-     The sticky column-header won't pin on mobile (acceptable tradeoff), but the
-     page header still freezes and rows no longer hide behind it. */
-  .tscroll{overflow-x:auto}
+  /* ---- TABLE OVERFLOW CONTAINMENT (the one thing that broke mobile) ----
+     The leaderboard table is naturally ~728px wide. Without capping the wrapper
+     chain to the viewport it stretched <body> to 728px, which became the layout
+     viewport — so NONE of these mobile rules visually applied. Cap every box in
+     the chain to 100% width + min-width:0 so the table scrolls INSIDE .tscroll
+     instead of blowing out the page. min-width:max-content lets the table keep
+     its real column widths (legible) and scroll horizontally within its box. */
+  /* A flex/block box shrink-wraps to a max-content table child even with
+     max-width:100% (min-content wins over max-width). Make the table-card a
+     GRID with a minmax(0,1fr) track: a grid item with a 0 min cannot exceed the
+     track, so .tscroll is pinned to the panel width and the table scrolls inside
+     it. min-width:0 on the panel lets the whole row-2 panel shrink too. */
+  .panel{min-width:0}
+  .tablecard{display:grid;grid-template-columns:minmax(0,1fr)}
+  .tscroll{overflow-x:auto;-webkit-overflow-scrolling:touch;min-width:0}
+  /* table keeps its natural column widths (legible) and scrolls within .tscroll */
+  table{width:max-content;min-width:100%}
 }
 @media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 :focus-visible{outline:2px solid var(--primary);outline-offset:2px;border-radius:4px}
