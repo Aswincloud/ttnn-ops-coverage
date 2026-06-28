@@ -214,7 +214,7 @@ DOMAIN = {
 }
 
 
-def build(name, dtype, layout, mem, device, shape=None):
+def build(name, dtype, layout, mem, device, shape=None, force_interleaved=False):
     if shape is None:
         shape = PER_OP_SHAPE.get(name, SHAPE)
     if dtype in _INT_DTYPES:
@@ -222,7 +222,13 @@ def build(name, dtype, layout, mem, device, shape=None):
     else:
         lo, hi = DOMAIN.get(name, (0.1, 0.85))  # safe default for log/sqrt/acos/atanh
         t = torch.empty(shape).uniform_(lo, hi)
-    mem_cfg = make_mem(mem, shape, device) if isinstance(mem, str) else mem
+    # A broadcast operand (e.g. a (1,1,1,1) scalar) can't be sharded to its own shape:
+    # the shard would be sub-tile (1x1 / 1x32 / 32x1) and rejected in TILE layout. Real
+    # broadcasting keeps such operands interleaved while the primary stays sharded.
+    if force_interleaved and _is_sharded(mem):
+        mem_cfg = ttnn.L1_MEMORY_CONFIG
+    else:
+        mem_cfg = make_mem(mem, shape, device) if isinstance(mem, str) else mem
     tt = ttnn.from_torch(t, dtype=dtype, layout=layout, device=device, memory_config=mem_cfg)
     return quantize_ref(t, dtype), tt
 
@@ -376,15 +382,38 @@ def pcc_ok(golden, got, dtype):
         return f"pcc_err:{str(e)[:30]}", None, ulp
 
 
-def build_args(base, dtype, layout, mem, device):
-    """Construct (tt_args, tt_kwargs, torch_args) mirroring the base op's arity."""
+# broadcast patterns applied to the non-primary operand(s) of binary/ternary ops.
+# "none" keeps the full shape (the existing tensor-tensor case); the others shrink a
+# dim to 1 so the device must broadcast it back up to the primary's shape.
+BCASTS = ("none", "scalar", "row", "col")
+
+
+def _bcast_shape(base, bcast):
+    """Shape of a broadcastable operand for a given pattern, relative to the op shape."""
+    s = PER_OP_SHAPE.get(base, SHAPE)
+    if bcast == "scalar":
+        return (1, 1, 1, 1)
+    if bcast == "row":  # collapse the height dim -> one row broadcast across rows
+        return (1, 1, 1, s[-1])
+    if bcast == "col":  # collapse the width dim -> one column broadcast across cols
+        return (1, 1, s[-2], 1)
+    return None  # "none": use the operand's default (full) shape
+
+
+def build_args(base, dtype, layout, mem, device, bcast="none"):
+    """Construct (tt_args, tt_kwargs, torch_args) mirroring the base op's arity.
+
+    The first operand always uses the full op shape; for binary/ternary ops the
+    remaining operands use the broadcast shape selected by `bcast`."""
     a_t, a = build(base, dtype, layout, mem, device)
+    bsh = _bcast_shape(base, bcast)
+    fi = bcast != "none"  # broadcast operands go interleaved (can't shard a sub-tile)
     if base in TERNARY:
-        b_t, b = build(base, dtype, layout, mem, device)
-        c_t, c = build(base, dtype, layout, mem, device)
+        b_t, b = build(base, dtype, layout, mem, device, shape=bsh, force_interleaved=fi)
+        c_t, c = build(base, dtype, layout, mem, device, shape=bsh, force_interleaved=fi)
         return [a, b, c], {}, [a_t, b_t, c_t]
     if base in BINARY:
-        b_t, b = build(base, dtype, layout, mem, device)
+        b_t, b = build(base, dtype, layout, mem, device, shape=bsh, force_interleaved=fi)
         p = BPARAMS.get(base, ())
         return [a, b, *p], {}, [a_t, b_t, *p]
     if base in UKW:
@@ -446,7 +475,7 @@ def call_bw_golden(gf, grad, inputs, scalars, device, dtype, kw=None):
     return _trunc_int(r) if r is not None else None
 
 
-def run_op(name, fn, gf, dtype, layout, mem, device):
+def run_op(name, fn, gf, dtype, layout, mem, device, bcast="none"):
     # resolve mode: forward / backward (_bw) / in-place (trailing _)
     mode, base = "fwd", name
     if name.endswith("_bw"):
@@ -597,8 +626,14 @@ def run_op(name, fn, gf, dtype, layout, mem, device):
         spec = BW_OVERRIDE[name]
         g_t, g = build(base, dtype, layout, mem, device)
         tt_in, torch_in = [], []
-        for _ in range(spec["tensors"]):
-            t_t, t = build(base, dtype, layout, mem, device)
+        bsh = _bcast_shape(base, bcast)
+        fi = bcast != "none"  # broadcast operands go interleaved (can't shard a sub-tile)
+        for i in range(spec["tensors"]):
+            # first tensor (the primary input) keeps full shape; broadcast the rest
+            t_t, t = build(
+                base, dtype, layout, mem, device,
+                shape=(bsh if i >= 1 else None), force_interleaved=(fi and i >= 1),
+            )
             tt_in.append(t)
             torch_in.append(_grad_clone(t_t))
         sc = spec["scalars"]
@@ -641,7 +676,7 @@ def run_op(name, fn, gf, dtype, layout, mem, device):
                 golden = None
         return finalize(out, golden, dtype)
 
-    tt_args, tt_kw, torch_args = build_args(base, dtype, layout, mem, device)
+    tt_args, tt_kw, torch_args = build_args(base, dtype, layout, mem, device, bcast)
     if mode == "bw":
         g_t, g = build(base, dtype, layout, mem, device)
         out = fn(g, *tt_args, **tt_kw)
@@ -669,6 +704,22 @@ _HERE = os.path.dirname(__file__)
 CSV_PATH = os.path.join(_HERE, "eltwise_support_matrix.csv")  # stable "latest" path
 HISTORY_DIR = os.path.join(_HERE, "history")  # per-day dated CSVs live here
 HEADER = ["op", "dtype", "layout", "mem", "bcast", "accepted", "pcc_or_reason", "input_range", "pcc", "ulp"]
+
+
+def bcast_list(name):
+    """Broadcast patterns to probe for an op. Only binary/ternary ops broadcast a
+    non-primary operand; everything else (and `outer`, which takes 1-D vectors) is
+    'none' only."""
+    base = name
+    if name.endswith("_bw"):
+        base = name[:-3]
+    elif name.endswith("_"):
+        base = name[:-1]
+    if base == "outer":
+        return ["none"]
+    if base in BINARY or base in TERNARY:
+        return list(BCASTS)
+    return ["none"]
 
 
 def dated_csv_path(day=None):
@@ -703,36 +754,37 @@ def _fmt_ulp(u):
 def probe_one(name, w, f, device):
     fn = getattr(ttnn, name, None)
     if fn is None or not callable(fn):
-        w.writerow([name, "-", "-", "-", "-", "NO_OP", "not in ttnn", "", "", ""])
+        w.writerow([name, "-", "-", "-", "none", "NO_OP", "not in ttnn", "", "", ""])
         f.flush()
         return
     try:
         gf = ttnn.get_golden_function(fn)
     except Exception:
         gf = None
+    bcasts = bcast_list(name)
     for ln, layout in LAYOUTS.items():
         for mn, mem in MEMS.items():
             for dn, dtype in DTYPES.items():
-                # reseed per-config so inputs are identical whether this op is probed
-                # alone (--op) or as part of a full run, independent of iteration order.
-                seed = zlib.crc32(f"{name}/{dn}/{ln}/{mn}".encode()) ^ _BASE_SEED
-                torch.manual_seed(seed)
-                pcc = ulp = None
-                try:
-                    acc, detail, pcc, ulp = run_op(name, fn, gf, dtype, layout, mem, device)
-                except Exception as e:
-                    # collapse to a single CSV-safe line; drop the volatile backtrace
-                    # (pointer addresses change every process run -> non-deterministic).
-                    acc = "FAIL"
-                    msg = str(e).split("backtrace")[0]
-                    detail = " | ".join(s.strip() for s in msg.strip().splitlines() if s.strip()).rstrip(" |")
-                # this probe sweeps non-broadcast configs only -> bcast="none".
-                # (The broadcast sweep that produces scalar/row/col rows lives in
-                # a separate, newer probe.)
-                w.writerow(
-                    [name, dn, ln, mn, "none", acc, detail, input_range(name, dtype), _fmt_pcc(pcc), _fmt_ulp(ulp)]
-                )
-                f.flush()
+                for bc in bcasts:
+                    # reseed per-config so inputs are identical whether this op is probed
+                    # alone (--op) or as part of a full run, independent of iteration order.
+                    # the non-broadcast ("none") key omits the bcast token so existing
+                    # tensor-tensor rows reproduce byte-for-byte with earlier runs.
+                    key = f"{name}/{dn}/{ln}/{mn}" + ("" if bc == "none" else f"/{bc}")
+                    torch.manual_seed(zlib.crc32(key.encode()) ^ _BASE_SEED)
+                    pcc = ulp = None
+                    try:
+                        acc, detail, pcc, ulp = run_op(name, fn, gf, dtype, layout, mem, device, bc)
+                    except Exception as e:
+                        # collapse to a single CSV-safe line; drop the volatile backtrace
+                        # (pointer addresses change every process run -> non-deterministic).
+                        acc = "FAIL"
+                        msg = str(e).split("backtrace")[0]
+                        detail = " | ".join(s.strip() for s in msg.strip().splitlines() if s.strip()).rstrip(" |")
+                    w.writerow(
+                        [name, dn, ln, mn, bc, acc, detail, input_range(name, dtype), _fmt_pcc(pcc), _fmt_ulp(ulp)]
+                    )
+                    f.flush()
 
 
 def main():

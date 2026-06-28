@@ -72,18 +72,27 @@ cd /home/ubuntu/tt-metal && export ARCH_NAME="wormhole_b0" && \
 | dtype  | `bfloat16`, `bfloat8_b`, `bfloat4_b`, `float32`, `int32`, `uint32`, `uint16`, `uint8` |
 | layout | `tile`, `rm` (row-major) |
 | mem    | `dram`, `l1`, `height`, `width`, `block` |
+| bcast  | `none`, `scalar`, `row`, `col` (binary/ternary ops only) |
 
 - `dram` / `l1` are interleaved memory configs.
 - `height` / `width` / `block` are **sharded** memory configs, built per-shape at
   runtime onto a single core (see `make_mem`), so they are valid on any hardware.
+- `bcast` shrinks the **non-primary** operand(s) of binary/ternary ops so the device
+  must broadcast them back up to the primary's shape:
+  - `none` — full shape (the plain tensor-tensor case)
+  - `scalar` — `(1,1,1,1)`
+  - `row` — `(1,1,1,W)` (broadcast across rows)
+  - `col` — `(1,1,H,1)` (broadcast across cols)
+  Unary ops (and `outer`, which takes 1-D vectors) only get `none`.
 
 Default tensor shape is a single tile `1×1×32×32` (keeps the sweep fast). Ops that
 need a larger tile-aligned shape are overridden in `PER_OP_SHAPE` (e.g. the GLU
 family uses `1×1×32×64` because it splits the last dim in half).
 
-One row per `op × dtype × layout × mem × bcast` combination. This probe sweeps
-`N ops × 8 dtypes × 2 layouts × 5 mems` at `bcast=none`; the `scalar`/`row`/`col`
-broadcast rows (binary ops only) are produced by a separate broadcast sweep.
+Row count = `299 ops × 8 dtypes × 2 layouts × 5 mems` for the `none` axis (23,920),
+plus `scalar`/`row`/`col` for each binary/ternary op variant (3 × 7,680), for a
+total of **46,960 rows**. Many broadcast rows are `FAIL` because `binary_ng`
+broadcast support is restricted by layout/mem/mode — that is itself the data.
 
 ---
 
@@ -92,7 +101,7 @@ broadcast rows (binary ops only) are produced by a separate broadcast sweep.
 ```
 op,dtype,layout,mem,bcast,accepted,pcc_or_reason,input_range,pcc,ulp
 add,bfloat16,tile,dram,none,OK,pass,[0.1..0.85],0.999987,1.000
-add,bfloat16,tile,dram,scalar,OK,pass,[0.1..0.85],0.999971,1.000
+add,bfloat16,tile,dram,row,OK,pass,[0.1..0.85],0.999990,1.000
 add,uint8,tile,dram,none,FAIL,"TT_FATAL ... UINT8 is not supported ...",[1..49],,
 acosh,float32,tile,dram,none,OK,pass,[1.1..5.0],0.999999,33607.000
 sigmoid,int32,tile,dram,none,OK,fail,[1..49],,
@@ -100,7 +109,7 @@ sigmoid,int32,tile,dram,none,OK,fail,[1..49],,
 
 | Column | Meaning |
 |--------|---------|
-| `bcast` | broadcast mode of the second operand: `none` (no broadcast / unary ops), or `scalar` / `row` / `col` for binary ops tested with broadcasting |
+| `bcast` | broadcast pattern of the non-primary operand: `none` / `scalar` / `row` / `col` |
 | `accepted` | `OK` ran; `FAIL` op rejected the config; `NO_OP` name not in ttnn; `CRASH` subprocess died |
 | `pcc_or_reason` | `pass` / `fail` / `fail(<pcc>)` / `nan` / `shape?` on success; full error text on `FAIL`/`CRASH` |
 | `input_range` | value range fed to inputs: `[1..49]` for integers, `[lo..hi]` for floats (per-op `DOMAIN`) |
@@ -152,7 +161,7 @@ CSV=tests/ttnn/unit_tests/operations/eltwise/eltwise_support_matrix.csv
 echo "op,dtype,layout,mem,bcast,accepted,pcc_or_reason,input_range,pcc,ulp" > "$CSV"
 for op in $(python "$P" --list-ops); do
   python "$P" --op "$op" >/tmp/probe_op.log 2>&1 \
-    || echo "$op,-,-,-,-,CRASH,hard-crash,,," >> "$CSV"
+    || echo "$op,-,-,-,none,CRASH,hard-crash,,," >> "$CSV"
 done
 ```
 
@@ -169,7 +178,7 @@ Re-probe specific ops and merge them back, keeping the latest rows:
 
 ```bash
 for op in glu geglu reglu swiglu; do python "$P" --op "$op"; done
-# dedupe on (op,dtype,layout,mem,bcast), keeping the last occurrence
+# dedupe on (op,dtype,layout,mem), keeping the last occurrence
 head -1 "$CSV" > /tmp/h.csv
 tail -n +2 "$CSV" | tac | awk -F, '!seen[$1","$2","$3","$4","$5]++' | tac > /tmp/b.csv
 cat /tmp/h.csv /tmp/b.csv > "$CSV"
@@ -194,6 +203,18 @@ cat /tmp/h.csv /tmp/b.csv > "$CSV"
   `lgamma`) so inputs stay valid.
 - **References are quantized** to the device dtype before comparison
   (`quantize_ref`) so PCC measures kernel error, not input-quantisation noise.
+- **Broadcast** (`bcast` axis) shrinks the non-primary operand via `_bcast_shape`
+  (the primary keeps the full op shape); torch broadcasts the golden automatically,
+  and for backward ops autograd reduces the gradient back to each operand's shape.
+  Only ops whose base is in `BINARY`/`TERNARY` get the extra `scalar`/`row`/`col`
+  rows (see `bcast_list`); the `none` row reuses the original seed so it reproduces
+  earlier non-broadcast results byte-for-byte.
+- **Broadcast + sharding:** a broadcast operand can't be sharded to its own shape
+  (a `(1,1,1,1)` scalar would need a sub-tile `1x1` shard, rejected in TILE layout).
+  So when the mem is sharded, broadcast operands are placed in **interleaved L1**
+  (`build(..., force_interleaved=True)`) while the **primary stays sharded** — which
+  is how broadcasting-on-sharded actually works on device. This lets sharded
+  broadcast rows exercise the real op instead of failing in `make_mem`.
 
 ---
 
