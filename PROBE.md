@@ -7,6 +7,9 @@ For each op it sweeps every `dtype × layout × memory-config` combination, runs
 op on device, and records:
 - **accepted** — did the op run without raising? (`OK` / `FAIL` / `NO_OP` / `CRASH`)
 - **verdict** — does the output match the golden? (`pass` / `fail` / `nan` / a raw error)
+- **input_range** — the value range fed to the inputs for that `(op, dtype)`
+- **pcc** — the numeric Pearson correlation vs the golden (blank when undefined)
+- **ulp** — max per-element error in ULP (float dtypes only; blank otherwise)
 
 Results are written incrementally to `eltwise_support_matrix.csv` next to the script.
 
@@ -31,6 +34,37 @@ This **overwrites** `eltwise_support_matrix.csv` (writes the header, then all op
 
 ---
 
+## Daily runs / dashboards
+
+For a scheduled daily run, use `--dated` to keep a per-day snapshot:
+
+```bash
+python tests/ttnn/unit_tests/operations/eltwise/eltwise_support_probe.py --dated
+```
+
+This writes a date-stamped file under a `history/` folder next to the script:
+
+```
+history/eltwise_support_matrix_YYYY-MM-DD.csv
+```
+
+and also refreshes the stable `eltwise_support_matrix.csv` (a copy of today's run),
+so a dashboard can always read one fixed "latest" path while `history/*.csv` powers
+trend lines over time. Re-running on the same day overwrites that day's file.
+
+Use `--out <path>` to write to an explicit path instead (overrides `--dated`).
+
+Example cron line:
+
+```bash
+cd /home/ubuntu/tt-metal && export ARCH_NAME="wormhole_b0" && \
+  source python_env/bin/activate && \
+  python tests/ttnn/unit_tests/operations/eltwise/eltwise_support_probe.py --dated \
+  >> /home/ubuntu/eltwise_probe.log 2>&1
+```
+
+---
+
 ## The axes
 
 | Axis | Values |
@@ -47,26 +81,32 @@ Default tensor shape is a single tile `1×1×32×32` (keeps the sweep fast). Ops
 need a larger tile-aligned shape are overridden in `PER_OP_SHAPE` (e.g. the GLU
 family uses `1×1×32×64` because it splits the last dim in half).
 
-Total = `255 ops × 8 dtypes × 2 layouts × 5 mems = 20,400 rows`.
+Total = `299 ops × 8 dtypes × 2 layouts × 5 mems = 23,920 rows`.
 
 ---
 
 ## CSV output format
 
 ```
-op,dtype,layout,mem,accepted,pcc_or_reason
-add,bfloat16,tile,dram,OK,pass
-add,uint8,tile,dram,FAIL,"TT_FATAL ... UINT8 is not supported ..."
-sigmoid,int32,tile,dram,OK,fail
+op,dtype,layout,mem,accepted,pcc_or_reason,input_range,pcc,ulp
+add,bfloat16,tile,dram,OK,pass,[0.1..0.85],0.999987,1.000
+add,uint8,tile,dram,FAIL,"TT_FATAL ... UINT8 is not supported ...",[1..49],,
+acosh,float32,tile,dram,OK,pass,[1.1..5.0],0.999999,33607.000
+sigmoid,int32,tile,dram,OK,fail,[1..49],,
 ```
 
 | Column | Meaning |
 |--------|---------|
 | `accepted` | `OK` ran; `FAIL` op rejected the config; `NO_OP` name not in ttnn; `CRASH` subprocess died |
 | `pcc_or_reason` | `pass` / `fail` / `fail(<pcc>)` / `nan` / `shape?` on success; full error text on `FAIL`/`CRASH` |
+| `input_range` | value range fed to inputs: `[1..49]` for integers, `[lo..hi]` for floats (per-op `DOMAIN`) |
+| `pcc` | numeric Pearson correlation vs golden (6 dp); blank when undefined (errored / no-golden / constant output) |
+| `ulp` | max per-element error in ULP (3 dp); only for `bfloat16` / `bfloat8_b` (measured in bf16) / `float32`; blank for `bfloat4_b`, integers, and errored rows |
 
-PCC thresholds: `0.99` (default), `0.97` for `bfloat8_b`, `0.90` for `bfloat4_b`.
-Integer dtypes are compared with exact equality.
+PCC thresholds (used only for the `pass`/`fail` verdict): `0.99` (default), `0.97`
+for `bfloat8_b`, `0.90` for `bfloat4_b`. Integer dtypes are compared with **exact
+equality** (the `pcc` column is still filled in for reference, but it is not what
+decides the verdict). ULP is informational and does not affect the verdict.
 
 ---
 
@@ -88,51 +128,6 @@ PROBE_DTYPES=bfloat16,float32 PROBE_LAYOUTS=tile PROBE_MEMS=dram,height \
 
 ---
 
-## Dated snapshots & the dashboard "What changed" view
-
-The dashboard has a **Changes** button that diffs the current matrix against the
-*previous* probe run — which ops/configs newly pass, regressed, were added/removed,
-or had a meaningful PCC/ULP shift. It's powered entirely at build time from
-committed CSV snapshots; there's no database.
-
-**How to feed it.** Run the probe with `--dated`, which writes a per-day snapshot
-into `history/` *and* refreshes the stable CSV:
-
-```bash
-python .../eltwise_support_probe.py --dated
-#   -> history/eltwise_support_matrix_YYYY-MM-DD.csv   (the dated snapshot)
-#   -> eltwise_support_matrix.csv                      (stable copy, as usual)
-```
-
-Then promote the run to the dashboard's data source and commit **both** files:
-
-```bash
-cp eltwise_support_matrix.csv ops.csv
-git add ops.csv history/eltwise_support_matrix_YYYY-MM-DD.csv
-git commit -m "probe run YYYY-MM-DD"
-```
-
-**What the dashboard does at build time** (`process.py` → `compute_changes()`):
-
-- Lists `history/eltwise_support_matrix_*.csv`, sorts by the `YYYY-MM-DD` in the name.
-- The **newest** dated file is this run (it equals `ops.csv`); the **baseline** is the
-  **second-newest** — i.e. the previous committed run.
-- Keys every config by `(op, dtype, layout, mem)` and classifies each into:
-  `improved` (→ pass), `regressed` (pass →), `statusChange`, `new`, `removed`, or
-  `shift` (status unchanged but `|Δpcc| ≥ 0.01` **or** the ULP bucket moved).
-- Ships a compact, capped `changes` payload (≤ 60 ops, ≤ 20 items/op, with overflow
-  counts) in `data.js`.
-
-**Ships dark until there's history.** With fewer than two dated snapshots committed
-the button honestly says *"No baseline snapshot yet"* — it lights up the moment two
-`--dated` runs exist in `history/`.
-
-**Retention.** Only the *previous* snapshot is needed for the current diff, so old
-`history/*.csv` can be pruned (keep the last ~2) to bound repo size — each raw CSV is
-~700 KB. `history/.gitkeep` keeps the directory present even when empty.
-
----
-
 ## Single-op mode (and crash isolation)
 
 ```bash
@@ -150,10 +145,10 @@ subprocess so a hard segfault only loses that one op instead of the whole sweep.
 ```bash
 P=tests/ttnn/unit_tests/operations/eltwise/eltwise_support_probe.py
 CSV=tests/ttnn/unit_tests/operations/eltwise/eltwise_support_matrix.csv
-echo "op,dtype,layout,mem,accepted,pcc_or_reason" > "$CSV"
+echo "op,dtype,layout,mem,accepted,pcc_or_reason,input_range,pcc,ulp" > "$CSV"
 for op in $(python "$P" --list-ops); do
   python "$P" --op "$op" >/tmp/probe_op.log 2>&1 \
-    || echo "$op,-,-,-,CRASH,hard-crash" >> "$CSV"
+    || echo "$op,-,-,-,CRASH,hard-crash,,," >> "$CSV"
 done
 ```
 
@@ -180,7 +175,7 @@ cat /tmp/h.csv /tmp/b.csv > "$CSV"
 
 ## How verdicts are produced (internals)
 
-- **Op categories** (`BINARY`, `TERNARY`, `REDUCTION`, `CUMULATIVE`, `GLU`,
+- **Op categories** (`BINARY`, `TERNARY`, `REDUCTION`, `GLU`, `QUANT`,
   `COMPLEX_CONSUMERS`) decide arity and how inputs/goldens are built.
 - **Modes** are inferred from the name: `_bw` → backward, trailing `_` → in-place,
   else forward.
