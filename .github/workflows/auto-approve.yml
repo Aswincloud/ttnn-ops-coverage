@@ -1,11 +1,12 @@
 name: Auto-approve admin PRs
 
 # Automatically approve a pull request when its author is a member of the
-# Aswincloud/admins team. Uses the org PAT (WRITE_ACCESS_PAT) because:
-#   - reading org team membership needs more than the default GITHUB_TOKEN, and
-#   - the approving review must come from an account with write access.
+# Aswincloud/admins team. Two least-privilege tokens, split by what they do:
+#   - ORG_READ_TOKEN  reads org team membership (the default GITHUB_TOKEN can't).
+#   - WRITE_ACCESS_PAT posts the approval (a review needs a write-access account).
+# Both are org secrets with visibility "all", so they reach this repo.
 #
-# pull_request_target runs in the BASE repo context (so the secret is available
+# pull_request_target runs in the BASE repo context (so the secrets are available
 # even for fork PRs). This is safe here: the job never checks out or runs the
 # PR's code — it only calls the GitHub API.
 
@@ -28,7 +29,34 @@ jobs:
     # Skip drafts — approve once it's a real review candidate.
     if: github.event.pull_request.draft == false
     steps:
-      - name: Approve if the author is in Aswincloud/admins
+      # 1) Read-only: is the PR author an ACTIVE member of the admins team?
+      #    Uses ORG_READ_TOKEN — a least-privilege token scoped to read org
+      #    membership (the default GITHUB_TOKEN can't, and we don't want the
+      #    write PAT doing the lookup).
+      - name: Check admins-team membership
+        id: member
+        env:
+          GH_TOKEN: ${{ secrets.ORG_READ_TOKEN }}
+          AUTHOR:   ${{ github.event.pull_request.user.login }}
+          ORG:      Aswincloud
+          TEAM:     admins
+        run: |
+          set -euo pipefail
+          state="$(gh api "orgs/${ORG}/teams/${TEAM}/memberships/${AUTHOR}" \
+                     --jq '.state' 2>/dev/null || true)"
+          if [ "${state}" = "active" ]; then
+            echo "✓ @${AUTHOR} is an active member of @${ORG}/${TEAM}."
+            echo "is_admin=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "↷ @${AUTHOR} is not an active member of @${ORG}/${TEAM} — nothing to do."
+            echo "is_admin=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # 2) Write: approve the PR. Only runs when step 1 said the author is an
+      #    admin. Uses WRITE_ACCESS_PAT — the approving review must come from an
+      #    account with write access.
+      - name: Approve the PR
+        if: steps.member.outputs.is_admin == 'true'
         env:
           GH_TOKEN: ${{ secrets.WRITE_ACCESS_PAT }}
           REPO:     ${{ github.repository }}
@@ -40,17 +68,8 @@ jobs:
         run: |
           set -euo pipefail
 
-          # 1) Is the PR author an ACTIVE member of the admins team?
-          state="$(gh api "orgs/${ORG}/teams/${TEAM}/memberships/${AUTHOR}" \
-                     --jq '.state' 2>/dev/null || true)"
-          if [ "${state}" != "active" ]; then
-            echo "↷ @${AUTHOR} is not an active member of @${ORG}/${TEAM} — nothing to do."
-            exit 0
-          fi
-          echo "✓ @${AUTHOR} is a member of @${ORG}/${TEAM}."
-
-          # 2) Don't stack reviews: if the token's own user already approved this
-          #    exact commit, stop. (Re-runs on `synchronize` then become no-ops.)
+          # Don't stack reviews: if the token's own user already approved this
+          # exact commit, stop. (Re-runs on `synchronize` then become no-ops.)
           ME="$(gh api user --jq '.login')"
           already="$(gh api "repos/${REPO}/pulls/${PR}/reviews" --paginate \
             --jq "[.[] | select(.user.login==\"${ME}\" and .state==\"APPROVED\" and .commit_id==\"${HEAD_SHA}\")] | length")"
@@ -59,9 +78,8 @@ jobs:
             exit 0
           fi
 
-          # 3) Approve. GitHub forbids approving your OWN PR, so if the token's
-          #    user is the author, fall back to a friendly comment instead of
-          #    failing the workflow.
+          # GitHub forbids approving your OWN PR, so if the write token's user
+          # is the author, fall back to a friendly comment instead of failing.
           if [ "${ME}" = "${AUTHOR}" ]; then
             echo "↷ Token user (@${ME}) is the PR author — GitHub blocks self-approval; leaving a note."
             gh pr comment "${PR}" --repo "${REPO}" \
