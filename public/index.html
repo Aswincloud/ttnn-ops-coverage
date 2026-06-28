@@ -424,7 +424,16 @@ footer a{color:var(--dim);text-decoration:none;border-bottom:1px dotted #3a4d6e}
 @media(max-width:1200px){.kpis{--kpi-cols:3 !important}.row-charts{grid-template-columns:1fr}.donut-wrap{justify-content:center}}
 @media(max-width:880px){.efam-2col{grid-template-columns:1fr}}
 @media(max-width:760px){
-  .wrap{padding:0 13px 60px}.kpis{--kpi-cols:2 !important}.dims{grid-template-columns:1fr}
+  /* Backstop against page-level horizontal pan: the leaderboard table is ~743px
+     and scrolls inside .tscroll, but in Chromium its max-content width still
+     leaks into the document's scrollWidth and lets the whole page pan ~210px.
+     Clipping <html>/<body> doesn't contain it (root-overflow propagation quirk),
+     so clip on the bounded content box .wrap instead — a non-root overflow:clip
+     DOES stop the scrollWidth from propagating past it. clip (not hidden) keeps
+     position:sticky table headers working (hidden would break them), and the
+     tooltip (#tip) is position:fixed on <body>, outside .wrap, so it's unaffected.
+     The table still scrolls within its own .tscroll box. */
+  .wrap{padding:0 13px 60px;overflow-x:clip}.kpis{--kpi-cols:2 !important}.dims{grid-template-columns:1fr}
   header.top{margin:0 -13px 18px;padding:14px 13px 12px;gap:12px}
   #search{width:100%}.searchbox{width:100%}.spacer{display:none}
   .brand h1{font-size:18px}.kpi .val{font-size:25px}
