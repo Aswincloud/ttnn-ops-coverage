@@ -255,7 +255,6 @@ function renderErr(){
 function renderSnapshot(){
   const sc=D.statusCounts, total=D.meta.total;
   $('#snapTotal').textContent=fmt(total);
-  const verif=sc.PASS+sc.PCC_FAIL;
   const rows=[
     {lab:'Verifiable & correct', v:sc.PASS, of:total, c:SMETA.PASS.c},
     {lab:'Ran but inaccurate', v:sc.PCC_FAIL, of:total, c:SMETA.PCC_FAIL.c},
@@ -515,7 +514,7 @@ addEventListener('keydown',e=>{
   const overlay=$('#suggestOverlay'), form=$('#suggestForm');
   if(!overlay||!form) return;
   const openBtn=$('#suggestOpen'), closeEls=[$('#suggestClose'),$('#suggestCancel')];
-  const typeSel=$('#sgType'), msg=$('#sgMsg'), count=$('#sgCount'), opF=$('#sgOp'), opField=$('#opField');
+  const typeSel=$('#sgType'), msg=$('#sgMsg'), count=$('#sgCount'), opF=$('#sgOp');
   const email=$('#sgEmail'), website=$('#sgWebsite'), submit=$('#sgSubmit'), formMsg=$('#sgFormMsg');
   let lastFocus=null;
 
