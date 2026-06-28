@@ -275,6 +275,38 @@ function renderSnapshot(){
 }
 
 /* =========================================================
+   ULP ACCURACY DISTRIBUTION  (log-bucketed histogram, dtype-filterable)
+========================================================= */
+let ulpSel='all';   // 'all' | a dtype name
+function renderUlp(){
+  const u=D.ulpDist;
+  if(!u || !u.total){ return; }            // no ULP data -> leave panel empty
+  $('#ulpTotal').textContent=fmt(u.total);
+
+  // chips: All + each float dtype that has data
+  const dtypes=Object.keys(u.byDtype);
+  $('#ulpChips').innerHTML=
+    [['all','All'],...dtypes.map(d=>[d,d])]
+      .map(([k,lab])=>`<span class="ulp-chip${ulpSel===k?' active':''}" data-k="${k}">${lab}</span>`).join('');
+  $$('#ulpChips .ulp-chip').forEach(ch=>ch.addEventListener('click',()=>{
+    ulpSel=ch.dataset.k; renderUlp();
+  }));
+
+  const counts = ulpSel==='all' ? u.overall : u.byDtype[ulpSel];
+  const tot = counts.reduce((a,b)=>a+b,0);
+  const max = Math.max(...counts,1);       // scale bars to the tallest bucket
+  $('#ulpBars').innerHTML=u.labels.map((lab,i)=>{
+    const c=counts[i], wpc=pct(c,max), share=tot?pct(c,tot):0;
+    const exact = i===0 ? ' exact' : '';   // bucket "0" = bit-exact
+    return `<div class="ulp-row${exact}">
+      <span class="ulp-lab">${lab}</span>
+      <div class="ulp-track"><i class="ulp-fill" style="width:${c?Math.max(wpc,1.5):0}%"></i></div>
+      <span class="ulp-ct"><b>${fmt(c)}</b> · ${share.toFixed(1)}%</span>
+    </div>`;
+  }).join('');
+}
+
+/* =========================================================
    LEADERBOARD TABLE  (sort / filter / drill-down)
 ========================================================= */
 const state = {
@@ -612,6 +644,7 @@ renderDonut();
 renderDims();
 renderErr();
 renderSnapshot();
+renderUlp();
 renderChips();
 renderHead();
 renderTable();

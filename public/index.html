@@ -250,6 +250,24 @@ select.inp{cursor:pointer;appearance:none;background-image:url("data:image/svg+x
 .sbar i{height:100%;transition:filter var(--t);position:relative;cursor:pointer}
 .sbar i:hover{filter:brightness(1.18)}
 .sbar-pct{font-family:var(--mono);font-size:12px;font-weight:600;width:46px;flex:none;text-align:right}
+/* --- ULP distribution panel --- */
+.ulp-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:14px}
+.ulp-chips{display:flex;gap:6px;flex:none;flex-wrap:wrap}
+.ulp-chip{font-family:var(--mono);font-size:11.5px;font-weight:600;cursor:pointer;user-select:none;
+  padding:5px 11px;border-radius:8px;border:1px solid var(--border);background:var(--card-2);color:var(--dim);
+  transition:border-color var(--t),background var(--t),color var(--t)}
+.ulp-chip:hover{border-color:var(--border-hi);color:var(--text)}
+.ulp-chip.active{border-color:var(--primary);background:#13233f;color:var(--primary-hi)}
+.ulp-bars{display:flex;flex-direction:column;gap:9px}
+.ulp-row{display:flex;align-items:center;gap:11px}
+.ulp-lab{font-family:var(--mono);font-size:12px;color:var(--dim);width:42px;flex:none;text-align:right;font-variant-numeric:tabular-nums}
+.ulp-track{flex:1;height:20px;border-radius:6px;background:#0a1120;border:1px solid #1a2740;overflow:hidden}
+.ulp-fill{display:block;height:100%;border-radius:6px 0 0 6px;background:linear-gradient(90deg,#2563eb,#60a5fa);transition:width 600ms cubic-bezier(.4,0,.2,1)}
+.ulp-ct{font-family:var(--mono);font-size:11.5px;color:var(--faint);width:104px;flex:none;text-align:right;font-variant-numeric:tabular-nums}
+.ulp-ct b{color:var(--text);font-weight:600}
+/* 0-ULP (bit-exact) bar gets a green tint to celebrate perfect accuracy */
+.ulp-row.exact .ulp-fill{background:linear-gradient(90deg,#059669,#34d399)}
+.ulp-row.exact .ulp-lab{color:var(--pass)}
 
 /* error families */
 .efam{display:flex;flex-direction:column;gap:9px}
@@ -462,6 +480,17 @@ footer a{color:var(--dim);text-decoration:none;border-bottom:1px dotted #3a4d6e}
     <h2><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.3 3.3 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.3a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/></svg>Top Hard-Error Signatures</h2>
     <div class="ph-sub">Device assertion &amp; build failures (<b id="errTotal"></b> total), grouped by source location</div>
     <div class="efam efam-2col" id="efam"></div>
+  </div>
+
+  <div class="panel" style="margin-bottom:14px">
+    <div class="ulp-head">
+      <div>
+        <h2><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="m7 14 3-4 4 3 4-6"/></svg>Numerical Accuracy</h2>
+        <div class="ph-sub">Max per-element error in <b>ULP</b> (units in the last place) across the <b id="ulpTotal"></b> float configs with a golden — lower is more bit-accurate</div>
+      </div>
+      <div class="ulp-chips" id="ulpChips"></div>
+    </div>
+    <div class="ulp-bars" id="ulpBars"></div>
   </div>
 
   <div class="panel tablecard">

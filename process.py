@@ -77,6 +77,25 @@ op_counts = defaultdict(Counter)
 err_families = Counter()
 err_sample = {}
 
+# --- ULP-error distribution -------------------------------------------------
+# ULP spans 0 .. ~8e10, so linear buckets are useless (one giant bar at 0).
+# Bucket on a log-ish scale instead. ULP is float-only (bf4/int rows are blank).
+ULP_EDGES = [0, 1, 2, 4, 8, 16, 32, 64, 128, 256, 1024, float("inf")]
+ULP_LABELS = ["0", "≤1", "≤2", "≤4", "≤8", "≤16", "≤32", "≤64", "≤128", "≤256", "≤1K", ">1K"]
+ulp_overall = Counter()                       # bucket -> count, all float dtypes
+ulp_by_dtype = defaultdict(Counter)           # dtype -> bucket -> count
+
+
+def ulp_bucket(x):
+    """Index into ULP_LABELS for a ULP value. 0 is its own exact bucket; the rest
+    are 'first edge the value is <= '. Anything above 1024 lands in '>1K'."""
+    if x <= 0:
+        return 0
+    for i in range(1, len(ULP_EDGES) - 1):
+        if x <= ULP_EDGES[i]:
+            return i
+    return len(ULP_LABELS) - 1
+
 
 def intern(v, store, idx):
     if v not in idx:
@@ -104,6 +123,16 @@ with open(SRC, newline="") as f:
                 pcc = round(float(r[7]), 4)
             except ValueError:
                 pcc = None
+
+        # max per-element ULP error (CSV col 9). Float-only; blank otherwise.
+        # Bucket it (overall + per-dtype) for the accuracy distribution chart.
+        if len(r) >= 9 and r[8].strip():
+            try:
+                bi = ulp_bucket(float(r[8]))
+                ulp_overall[bi] += 1
+                ulp_by_dtype[dt][bi] += 1
+            except ValueError:
+                pass
 
         opi = intern(op, ops, oI)
         dti = intern(dt, dts, dI)
@@ -152,6 +181,20 @@ def dim_obj(d):
 
 err_top = [{"sig": s, "count": n, "sample": err_sample[s]} for s, n in err_families.most_common(14)]
 
+# --- ULP distribution payload: bucket labels + overall counts + per-dtype ---
+# Only float dtypes appear (those with any ULP value). Shipped as parallel count
+# arrays aligned to `labels` so the chart just maps index -> bar height.
+ulp_dtypes = [d for d in dts if d != "-" and ulp_by_dtype.get(d)]
+ulp_dist = {
+    "labels": ULP_LABELS,
+    "overall": [ulp_overall.get(i, 0) for i in range(len(ULP_LABELS))],
+    "total": sum(ulp_overall.values()),
+    "byDtype": {
+        d: [ulp_by_dtype[d].get(i, 0) for i in range(len(ULP_LABELS))]
+        for d in ulp_dtypes
+    },
+}
+
 data = {
     "meta": {
         "total": len(rows),
@@ -173,6 +216,7 @@ data = {
     "rows": rows,
     "opLeaderboard": op_rows,
     "errFamilies": err_top,
+    "ulpDist": ulp_dist,
 }
 
 with open(OUT, "w") as f:
