@@ -475,7 +475,9 @@ function renderTable(){
 // Replace one op's expanded detail row in place (mode switch) and rebind only
 // the affected handlers, so switching broadcast mode never moves the page.
 function swapDetail(op){
-  const opRow=$(`#tbody tr.op-row[data-op="${CSS.escape(op)}"]`);
+  // locate by data-op match (not a CSS selector — op names are trusted but this
+  // avoids depending on CSS.escape and any selector-special chars)
+  const opRow=$$('#tbody tr.op-row').find(tr=>tr.dataset.op===op);
   if(!opRow) return;
   const detail=opRow.nextElementSibling;
   if(!detail||!detail.classList.contains('detail')) return;
@@ -539,7 +541,6 @@ function buildMatrix(op, bmode){
 function detailRow(op){
   const bmode=bmodeFor(op);
   const {dts,cols,map}=buildMatrix(op, bmode);
-  const o=D.opLeaderboard.find(x=>x.op===op);
   const colW=`minmax(56px,1fr)`;
   let grid=`grid-template-columns:96px repeat(${cols.length},${colW})`;
   let cells=`<div class="mtx-corner" style="grid-column:1;writing-mode:vertical">dtype ↓ / layout·mem →</div>`;
