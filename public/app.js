@@ -220,7 +220,11 @@ function renderDims(){
     `<div style="height:14px"></div>`+
     dimBlock('Tensor Layout','tile vs row-major', D.dims.layout)+
     `<div style="height:14px"></div>`+
-    dimBlock('Memory','dram vs l1', D.dims.mem);
+    dimBlock('Memory','dram vs l1', D.dims.mem)+
+    (D.dims.bcast && D.dims.bcast.length
+      ? `<div style="height:14px"></div>`+
+        dimBlock('Broadcast','none vs scalar / row / col (binary ops)', D.dims.bcast)
+      : '');
   $$('#dims .sbar i').forEach(seg=>{
     const s=seg.dataset.s;
     seg.addEventListener('mousemove',e=>showTip(
@@ -452,18 +456,39 @@ function renderTable(){
 }
 
 /* ---- per-op drill-down: dtype × (layout∙mem) matrix ---- */
+// Active broadcast mode for the matrix. Binary ops have up to 4 rows per
+// (dt,ly,mem) — one per mode — so the matrix shows ONE mode at a time (chips
+// below the table switch it). 'none' is the always-present default; unary ops
+// only ever have 'none' rows.
+let bcastSel = (D.meta.bcasts && D.meta.bcasts.includes('none')) ? 'none' : (D.meta.bcasts?.[0] || 'none');
+// Broadcast-mode chip strip above the leaderboard. Hidden when there's only one
+// mode (nothing to switch). Clicking a chip re-renders open matrices for that
+// mode (mirrors the ULP ulpSel toggle pattern).
+function renderBcastChips(){
+  const bar=$('#bcastBar'), wrap=$('#bcastChips');
+  const modes=D.meta.bcasts||[];
+  if(!bar||!wrap||modes.length<2){ if(bar) bar.hidden=true; return; }
+  bar.hidden=false;
+  wrap.innerHTML=modes.map(m=>`<span class="ulp-chip${bcastSel===m?' active':''}" data-k="${m}">${m}</span>`).join('');
+  $$('#bcastChips .ulp-chip').forEach(ch=>ch.addEventListener('click',()=>{
+    bcastSel=ch.dataset.k;
+    renderBcastChips();   // refresh active state
+    renderTable();        // rebuild any open matrices for the new mode
+  }));
+}
 function buildMatrix(op){
-  // collect this op's rows
+  // collect this op's rows for the selected broadcast mode
   const opi=D.ops.indexOf(op);
   const dts=D.meta.dtypes, lys=D.meta.layouts, mems=D.meta.mems;
   const cols=[]; lys.forEach(l=>mems.forEach(m=>cols.push({l,m,key:l+'·'+m})));
-  // map[dt][col] = {status, reason}
+  // map[dt][col] = {status, reason, …} — one row per cell once filtered by bcast
   const map={}; dts.forEach(d=>map[d]={});
   for(const r of D.rows){
     if(r[0]!==opi) continue;
+    if(D.bcasts[r[9]]!==bcastSel) continue;       // show only the active mode
     const dt=D.dts[r[1]], ly=D.lys[r[2]], mem=D.mems[r[3]];
     if(dt==='-'||ly==='-'||mem==='-') continue;
-    map[dt][ly+'·'+mem]={status:D.statusList[r[4]], reason:D.reasons[r[5]], pcc:r[6], ulp:r[7], inputs:(r[8]>=0?D.inputs[r[8]]:'')};
+    map[dt][ly+'·'+mem]={status:D.statusList[r[4]], reason:D.reasons[r[5]], pcc:r[6], ulp:r[7], inputs:(r[8]>=0?D.inputs[r[8]]:''), bcast:D.bcasts[r[9]]};
   }
   return {dts,cols,map};
 }
@@ -481,13 +506,18 @@ function detailRow(op){
       if(!cell){ cells+=`<div class="cell c-empty"></div>`; return; }
       const m=SMETA[cell.status];
       const dark = cell.status==='SKIP'||cell.status==='NOT_IN_TTNN';
-      cells+=`<div class="cell" style="background:${m.c};color:${dark?'#cdd8ea':'#0a0e16'}" data-status="${cell.status}" data-dt="${dt}" data-cfg="${c.l}·${c.m}" data-pcc="${cell.pcc==null?'':cell.pcc}" data-ulp="${cell.ulp==null?'':cell.ulp}" data-inputs="${cell.inputs||''}" data-reason="${(cell.reason||'').replace(/"/g,'&quot;')}">${m.short[0]}</div>`;
+      cells+=`<div class="cell" style="background:${m.c};color:${dark?'#cdd8ea':'#0a0e16'}" data-status="${cell.status}" data-dt="${dt}" data-cfg="${c.l}·${c.m}" data-bcast="${cell.bcast||''}" data-pcc="${cell.pcc==null?'':cell.pcc}" data-ulp="${cell.ulp==null?'':cell.ulp}" data-inputs="${cell.inputs||''}" data-reason="${(cell.reason||'').replace(/"/g,'&quot;')}">${m.short[0]}</div>`;
     });
   });
+  // configs shown = cells present for the active broadcast mode (not o.total,
+  // which sums all modes). Surface the mode so the count makes sense.
+  const shown=dts.reduce((n,dt)=>n+cols.reduce((k,c)=>k+(map[dt][c.key]?1:0),0),0);
+  const modeNote = (D.meta.bcasts&&D.meta.bcasts.length>1)
+    ? `<span class="dotsep"></span> broadcast: <b>${bcastSel}</b>` : '';
   return `<tr class="detail"><td colspan="${COLS.length}"><div class="detail-inner">
     <div class="matrix-title">
       <b>${op}</b> configuration matrix
-      <span class="dotsep"></span> ${o.total} configs
+      <span class="dotsep"></span> ${shown} configs${modeNote}
       <span class="dotsep"></span> hover a cell for the exact result
     </div>
     <div class="mtx" style="${grid}">${cells}</div>
@@ -528,6 +558,12 @@ function inputsLine(raw){
   if(!raw) return '';
   return `<div class="t-in">inputs <b>${raw.replace(/</g,'&lt;')}</b></div>`;
 }
+// Broadcast mode for the cell — part of the config context. 'none' = no
+// broadcast (the operands match shape); scalar/row/col = the tested broadcast.
+function bcastLine(raw){
+  if(!raw) return '';
+  return `<div class="t-in">broadcast <b>${raw}</b></div>`;
+}
 function bindMatrix(){
   $$('#tbody .cell:not(.c-empty)').forEach(c=>{
     c.addEventListener('mousemove',e=>{
@@ -537,6 +573,7 @@ function bindMatrix(){
       showTip(tipHead(s)+
         `<div class="t-r"><b>${c.dataset.dt}</b> · ${c.dataset.cfg}<br>`+
         (reason?reason.replace(/</g,'&lt;'):m.label)+`</div>`+
+        bcastLine(c.dataset.bcast)+
         inputsLine(c.dataset.inputs)+
         pccLine(c.dataset.pcc, c.dataset.dt, s)+
         ulpLine(c.dataset.ulp),e);
@@ -787,6 +824,7 @@ renderSnapshot();
 renderUlp();
 renderChanges();
 renderChips();
+renderBcastChips();
 renderHead();
 renderTable();
 syncHeaderHeight();

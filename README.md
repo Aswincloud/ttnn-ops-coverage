@@ -1,6 +1,6 @@
 # TTNN Ops Coverage Matrix
 
-An interactive, zero-dependency dashboard for the **TTNN (Tenstorrent) operation test matrix** — visualizing how every operation behaves across every `dtype × layout × memory` configuration, and how numerically accurate each result is.
+An interactive, zero-dependency dashboard for the **TTNN (Tenstorrent) operation test matrix** — visualizing how every operation behaves across every `dtype × layout × memory × broadcast` configuration, and how numerically accurate each result is.
 
 Built to deploy as a **Cloudflare Workers Static Assets** site. The entire front end is hand-rolled HTML/CSS/SVG with no runtime libraries, so it loads instantly and works fully offline.
 
@@ -16,8 +16,9 @@ Built to deploy as a **Cloudflare Workers Static Assets** site. The entire front
 ## What it shows
 
 The source data (`ops.csv`) is produced by [`eltwise_support_probe.py`](PROBE.md) — a
-sweep over **every op × dtype × layout × memory configuration** (8 dtypes × 2 layouts ×
-5 memory configs: interleaved `dram`/`l1` + sharded `height`/`width`/`block`). For every
+sweep over **every op × dtype × layout × memory × broadcast configuration** (8 dtypes ×
+2 layouts × 5 memory configs: interleaved `dram`/`l1` + sharded `height`/`width`/`block`;
+binary ops additionally tested with `scalar`/`row`/`col` **broadcasting**). For every
 config the probe records whether the op ran, whether the output matched a torch golden, the
 **input range** fed to it, the **PCC** vs the golden, and the max per-element **ULP** error.
 Each run's raw `pcc_or_reason` column is classified into a clean status taxonomy:
@@ -38,11 +39,11 @@ dtypes are graded by **exact equality** (PCC shown for reference only).
 
 - **KPI cards** — pass rate, hard errors, PCC failures, op total, config total
 - **Result-distribution donut** — click any slice to solo that status across the table
-- **Outcome by axis** — stacked pass/fail composition per dtype, layout, and memory
+- **Outcome by axis** — stacked pass/fail composition per dtype, layout, memory, and broadcast mode
 - **Numerical accuracy (ULP)** — distribution of max per-element error in [ULP](https://en.wikipedia.org/wiki/Unit_in_the_last_place), log-bucketed; toggle between dtypes
 - **Top hard-error signatures** — the most common device assertions, grouped by `source_file:line`
 - **Coverage snapshot** — how configs split between verifiable and unverifiable
-- **Operation leaderboard** — every op, sortable by any column, searchable. **Click a row** to expand a `dtype × layout·mem` heatmap; **hover any cell** for the exact status, input range, PCC, ULP, and failure reason.
+- **Operation leaderboard** — every op, sortable by any column, searchable. **Click a row** to expand a `dtype × layout·mem` heatmap; a **broadcast-mode toggle** (none / scalar / row / col) switches which mode the matrix shows; **hover any cell** for the exact status, broadcast mode, input range, PCC, ULP, and failure reason.
 
 ### Run-to-run comparison
 

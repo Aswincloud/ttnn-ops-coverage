@@ -44,6 +44,15 @@ def check_csv() -> int:
         if not header:
             fail("ops.csv is empty (no header)")
         ncol = len(header)
+        # Pin the exact schema. process.py reads several columns by INDEX, so a
+        # silently-inserted/reordered column (e.g. the bcast column added at
+        # position 5) would shift every later field off-by-one and mis-classify
+        # every row while still reconciling on counts. Catch that here.
+        EXPECTED = ["op", "dtype", "layout", "mem", "bcast",
+                    "accepted", "pcc_or_reason", "input_range", "pcc", "ulp"]
+        if header != EXPECTED:
+            fail(f"ops.csv header mismatch.\n     expected: {','.join(EXPECTED)}"
+                 f"\n     got:      {','.join(header)}")
         has_pcc = "pcc" in header
         pcc_i = header.index("pcc") if has_pcc else -1
         rows = 0

@@ -81,22 +81,26 @@ Default tensor shape is a single tile `1×1×32×32` (keeps the sweep fast). Ops
 need a larger tile-aligned shape are overridden in `PER_OP_SHAPE` (e.g. the GLU
 family uses `1×1×32×64` because it splits the last dim in half).
 
-One row per `op × dtype × layout × mem` combination (`N ops × 8 × 2 × 5`).
+One row per `op × dtype × layout × mem × bcast` combination. This probe sweeps
+`N ops × 8 dtypes × 2 layouts × 5 mems` at `bcast=none`; the `scalar`/`row`/`col`
+broadcast rows (binary ops only) are produced by a separate broadcast sweep.
 
 ---
 
 ## CSV output format
 
 ```
-op,dtype,layout,mem,accepted,pcc_or_reason,input_range,pcc,ulp
-add,bfloat16,tile,dram,OK,pass,[0.1..0.85],0.999987,1.000
-add,uint8,tile,dram,FAIL,"TT_FATAL ... UINT8 is not supported ...",[1..49],,
-acosh,float32,tile,dram,OK,pass,[1.1..5.0],0.999999,33607.000
-sigmoid,int32,tile,dram,OK,fail,[1..49],,
+op,dtype,layout,mem,bcast,accepted,pcc_or_reason,input_range,pcc,ulp
+add,bfloat16,tile,dram,none,OK,pass,[0.1..0.85],0.999987,1.000
+add,bfloat16,tile,dram,scalar,OK,pass,[0.1..0.85],0.999971,1.000
+add,uint8,tile,dram,none,FAIL,"TT_FATAL ... UINT8 is not supported ...",[1..49],,
+acosh,float32,tile,dram,none,OK,pass,[1.1..5.0],0.999999,33607.000
+sigmoid,int32,tile,dram,none,OK,fail,[1..49],,
 ```
 
 | Column | Meaning |
 |--------|---------|
+| `bcast` | broadcast mode of the second operand: `none` (no broadcast / unary ops), or `scalar` / `row` / `col` for binary ops tested with broadcasting |
 | `accepted` | `OK` ran; `FAIL` op rejected the config; `NO_OP` name not in ttnn; `CRASH` subprocess died |
 | `pcc_or_reason` | `pass` / `fail` / `fail(<pcc>)` / `nan` / `shape?` on success; full error text on `FAIL`/`CRASH` |
 | `input_range` | value range fed to inputs: `[1..49]` for integers, `[lo..hi]` for floats (per-op `DOMAIN`) |
@@ -145,10 +149,10 @@ subprocess so a hard segfault only loses that one op instead of the whole sweep.
 ```bash
 P=tests/ttnn/unit_tests/operations/eltwise/eltwise_support_probe.py
 CSV=tests/ttnn/unit_tests/operations/eltwise/eltwise_support_matrix.csv
-echo "op,dtype,layout,mem,accepted,pcc_or_reason,input_range,pcc,ulp" > "$CSV"
+echo "op,dtype,layout,mem,bcast,accepted,pcc_or_reason,input_range,pcc,ulp" > "$CSV"
 for op in $(python "$P" --list-ops); do
   python "$P" --op "$op" >/tmp/probe_op.log 2>&1 \
-    || echo "$op,-,-,-,CRASH,hard-crash,,," >> "$CSV"
+    || echo "$op,-,-,-,-,CRASH,hard-crash,,," >> "$CSV"
 done
 ```
 
@@ -165,9 +169,9 @@ Re-probe specific ops and merge them back, keeping the latest rows:
 
 ```bash
 for op in glu geglu reglu swiglu; do python "$P" --op "$op"; done
-# dedupe on (op,dtype,layout,mem), keeping the last occurrence
+# dedupe on (op,dtype,layout,mem,bcast), keeping the last occurrence
 head -1 "$CSV" > /tmp/h.csv
-tail -n +2 "$CSV" | tac | awk -F, '!seen[$1","$2","$3","$4]++' | tac > /tmp/b.csv
+tail -n +2 "$CSV" | tac | awk -F, '!seen[$1","$2","$3","$4","$5]++' | tac > /tmp/b.csv
 cat /tmp/h.csv /tmp/b.csv > "$CSV"
 ```
 

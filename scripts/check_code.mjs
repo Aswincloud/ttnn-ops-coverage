@@ -46,6 +46,18 @@ try {
     if (sum !== total) fail(`data.js: statusCounts sum ${sum} != meta.total ${total}`);
     else if (nrows !== total) fail(`data.js: rows length ${nrows} != meta.total ${total}`);
     else ok(`data.js boots + reconciles (${total} configs, ${D.opLeaderboard?.length ?? "?"} ops)`);
+
+    // broadcast axis must be present (guards against a regression that drops it)
+    const bc = D.meta?.bcasts;
+    if (!Array.isArray(bc) || !bc.includes("none")) {
+      fail(`data.js: meta.bcasts missing/invalid (expected an array incl. "none") — got ${JSON.stringify(bc)}`);
+    } else if (!Array.isArray(D.dims?.bcast) || !D.dims.bcast.length) {
+      fail("data.js: dims.bcast missing/empty (broadcast axis not aggregated)");
+    } else if (!D.rows.every((r) => typeof r[9] === "number")) {
+      fail("data.js: some rows lack the bcastIdx (index 9) slot");
+    } else {
+      ok(`broadcast axis present (modes: ${bc.join(", ")})`);
+    }
   }
 } catch (e) {
   fail(`data.js: failed to evaluate — ${e.message}`);

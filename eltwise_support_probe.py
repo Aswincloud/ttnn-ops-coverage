@@ -668,7 +668,7 @@ def run_op(name, fn, gf, dtype, layout, mem, device):
 _HERE = os.path.dirname(__file__)
 CSV_PATH = os.path.join(_HERE, "eltwise_support_matrix.csv")  # stable "latest" path
 HISTORY_DIR = os.path.join(_HERE, "history")  # per-day dated CSVs live here
-HEADER = ["op", "dtype", "layout", "mem", "accepted", "pcc_or_reason", "input_range", "pcc", "ulp"]
+HEADER = ["op", "dtype", "layout", "mem", "bcast", "accepted", "pcc_or_reason", "input_range", "pcc", "ulp"]
 
 
 def dated_csv_path(day=None):
@@ -703,7 +703,7 @@ def _fmt_ulp(u):
 def probe_one(name, w, f, device):
     fn = getattr(ttnn, name, None)
     if fn is None or not callable(fn):
-        w.writerow([name, "-", "-", "-", "NO_OP", "not in ttnn", "", "", ""])
+        w.writerow([name, "-", "-", "-", "-", "NO_OP", "not in ttnn", "", "", ""])
         f.flush()
         return
     try:
@@ -726,8 +726,11 @@ def probe_one(name, w, f, device):
                     acc = "FAIL"
                     msg = str(e).split("backtrace")[0]
                     detail = " | ".join(s.strip() for s in msg.strip().splitlines() if s.strip()).rstrip(" |")
+                # this probe sweeps non-broadcast configs only -> bcast="none".
+                # (The broadcast sweep that produces scalar/row/col rows lives in
+                # a separate, newer probe.)
                 w.writerow(
-                    [name, dn, ln, mn, acc, detail, input_range(name, dtype), _fmt_pcc(pcc), _fmt_ulp(ulp)]
+                    [name, dn, ln, mn, "none", acc, detail, input_range(name, dtype), _fmt_pcc(pcc), _fmt_ulp(ulp)]
                 )
                 f.flush()
 

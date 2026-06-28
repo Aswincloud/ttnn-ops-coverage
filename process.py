@@ -67,14 +67,16 @@ def err_signature(short):
     return m.group(1) if m else short
 
 
-rows = []                      # compact [opIdx, dtIdx, lyIdx, memIdx, statusIdx, reasonIdx, pcc|null, ulp|null, inputIdx]
+rows = []                      # compact [opIdx, dtIdx, lyIdx, memIdx, statusIdx, reasonIdx, pcc|null, ulp|null, inputIdx, bcastIdx]
 ops, dts, lys, mems = [], [], [], []
 oI, dI, lI, mI = {}, {}, {}, {}
 reasons, rI = [], {}
 inputs, inI = [], {}            # interned input-range strings (only ~7 distinct)
+bcasts, bcI = [], {}            # interned broadcast modes: none / scalar / row / col
 
 status_counts = Counter()
-dim_counts = {"dtype": defaultdict(Counter), "layout": defaultdict(Counter), "mem": defaultdict(Counter)}
+dim_counts = {"dtype": defaultdict(Counter), "layout": defaultdict(Counter),
+              "mem": defaultdict(Counter), "bcast": defaultdict(Counter)}
 op_counts = defaultdict(Counter)
 err_families = Counter()
 err_sample = {}
@@ -109,31 +111,32 @@ def intern(v, store, idx):
 with open(SRC, newline="") as f:
     rd = csv.reader(f)
     next(rd)  # header
+    # 10-col schema: op,dtype,layout,mem,bcast,accepted,pcc_or_reason,input_range,pcc,ulp
     for r in rd:
-        if len(r) < 6:
+        if len(r) < 10:
             continue
-        op, dt, ly, mem, accepted = r[0], r[1], r[2], r[3], r[4]
-        p = r[5].strip()
+        op, dt, ly, mem, bcast, accepted = r[0], r[1], r[2], r[3], r[4], r[5]
+        p = r[6].strip()
         status, short = classify(accepted, p)
 
-        # numeric Pearson correlation (CSV col 7, added by the probe). Empty for
+        # numeric Pearson correlation (CSV col 9, added by the probe). Empty for
         # FAIL/no-golden rows where PCC is undefined -> null. Rounded to 4dp to keep
         # the payload small; the matrix hover surfaces it.
         pcc = None
-        if len(r) >= 8 and r[7].strip():
+        if r[8].strip():
             try:
-                pcc = round(float(r[7]), 4)
+                pcc = round(float(r[8]), 4)
             except ValueError:
                 pcc = None
 
-        # max per-element ULP error (CSV col 9). Float-only; blank otherwise.
+        # max per-element ULP error (CSV col 10). Float-only; blank otherwise.
         # Keep the raw value for the matrix hover AND bucket it (overall +
         # per-dtype) for the accuracy distribution chart. Round to keep the
         # payload small: 2dp under 100, integer above (ULP can reach ~8e10).
         ulp = None
-        if len(r) >= 9 and r[8].strip():
+        if r[9].strip():
             try:
-                uval = float(r[8])
+                uval = float(r[9])
                 ulp = round(uval, 2) if uval < 100 else round(uval)
                 bi = ulp_bucket(uval)
                 ulp_overall[bi] += 1
@@ -141,9 +144,9 @@ with open(SRC, newline="") as f:
             except ValueError:
                 ulp = None
 
-        # input value range fed to the tensors (CSV col 7). Constant per
+        # input value range fed to the tensors (CSV col 8). Constant per
         # (op,dtype); only ~7 distinct strings, so intern and store the index.
-        inp = r[6].strip() if len(r) >= 7 else ""
+        inp = r[7].strip()
         ini = intern(inp, inputs, inI) if inp else -1
 
         opi = intern(op, ops, oI)
@@ -151,8 +154,9 @@ with open(SRC, newline="") as f:
         lyi = intern(ly, lys, lI)
         memi = intern(mem, mems, mI)
         ri = intern(short, reasons, rI)
+        bci = intern(bcast, bcasts, bcI)
         si = S_IDX[status]
-        rows.append([opi, dti, lyi, memi, si, ri, pcc, ulp, ini])
+        rows.append([opi, dti, lyi, memi, si, ri, pcc, ulp, ini, bci])
 
         status_counts[status] += 1
         if dt != "-":
@@ -161,6 +165,8 @@ with open(SRC, newline="") as f:
             dim_counts["layout"][ly][status] += 1
         if mem != "-":
             dim_counts["mem"][mem][status] += 1
+        if bcast != "-":
+            dim_counts["bcast"][bcast][status] += 1
         op_counts[op][status] += 1
         if status == "ERROR":
             sig = err_signature(short)
@@ -224,19 +230,21 @@ def _to_float(s):
 
 
 def parse_matrix(path):
-    """Path -> {(op,dt,ly,mem): {'s':status, 'pcc':float|None, 'ulp':float|None}}.
-    Skips the '-' placeholder dims (NO_OP rows) so keys are real configs."""
+    """Path -> {(op,dt,ly,mem,bcast): {'s':status, 'pcc':float|None, 'ulp':float|None}}.
+    Keys include broadcast mode so the 4 modes of a binary op are compared
+    like-for-like. Skips '-' placeholder dims (NO_OP rows). 10-col schema:
+    op,dtype,layout,mem,bcast,accepted,pcc_or_reason,input_range,pcc,ulp."""
     out = {}
     with open(path, newline="") as fh:
         rd = csv.reader(fh)
         next(rd, None)  # header
         for r in rd:
-            if len(r) < 6 or r[1] == "-":
+            if len(r) < 10 or r[1] == "-":
                 continue
-            status, _ = classify(r[4], r[5].strip())
-            pcc = _to_float(r[7]) if len(r) >= 8 else None
-            ulp = _to_float(r[8]) if len(r) >= 9 else None
-            out[(r[0], r[1], r[2], r[3])] = {"s": status, "pcc": pcc, "ulp": ulp}
+            status, _ = classify(r[5], r[6].strip())
+            pcc = _to_float(r[8])
+            ulp = _to_float(r[9])
+            out[(r[0], r[1], r[2], r[3], r[4])] = {"s": status, "pcc": pcc, "ulp": ulp}
     return out
 
 
@@ -284,7 +292,7 @@ def compute_changes():
     per_op = defaultdict(lambda: {"items": [], "counts": Counter()})
     SUM = base["summary"]
     for key in set(cur) | set(prev):
-        op, dt, ly, mem = key
+        op, dt, ly, mem, bcast = key
         a, b = prev.get(key), cur.get(key)
         if a is None:
             kind = "new"; SUM["new"] += 1
@@ -304,8 +312,8 @@ def compute_changes():
         if len(rec["items"]) < 20:
             def _side(x):
                 return None if x is None else {"s": x["s"], "pcc": x["pcc"], "ulp": x["ulp"]}
-            rec["items"].append({"dt": dt, "ly": ly, "mem": mem, "kind": kind,
-                                 "from": _side(frm), "to": _side(to)})
+            rec["items"].append({"dt": dt, "ly": ly, "mem": mem, "bcast": bcast,
+                                 "kind": kind, "from": _side(frm), "to": _side(to)})
 
     # rank ops: regressions first, then new/removed/changes, cap the list
     def op_weight(c):
@@ -335,6 +343,7 @@ data = {
         "dtypes": [d for d in dts if d != "-"],
         "layouts": [l for l in lys if l != "-"],
         "mems": [m for m in mems if m != "-"],
+        "bcasts": [b for b in bcasts if b != "-"],
         # build/refresh time — set when CF Workers Builds regenerates this file
         "generatedUTC": datetime.datetime.now(datetime.timezone.utc)
             .replace(microsecond=0).isoformat(),
@@ -344,7 +353,7 @@ data = {
     "statusList": STATUS,
     "statusCounts": {s: status_counts[s] for s in STATUS},
     "dims": {k: dim_obj(v) for k, v in dim_counts.items()},
-    "ops": ops, "dts": dts, "lys": lys, "mems": mems,
+    "ops": ops, "dts": dts, "lys": lys, "mems": mems, "bcasts": bcasts,
     "reasons": reasons,
     "inputs": inputs,
     "rows": rows,
