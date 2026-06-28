@@ -189,6 +189,37 @@ select.inp{cursor:pointer;appearance:none;background-image:url("data:image/svg+x
 @keyframes spin{to{transform:rotate(360deg)}}
 @media(max-width:760px){.modal{padding:20px 16px 16px}.modal-foot{flex-direction:column;align-items:stretch}.modal-actions{justify-content:flex-end}}
 
+/* ---------- "what changed" modal ---------- */
+.chg-empty{padding:30px 6px 12px;text-align:center;color:var(--faint);font-size:13px;line-height:1.6}
+.chg-empty svg{width:34px;height:34px;color:#33415e;margin:0 auto 12px;display:block}
+.chg-empty code{font-family:var(--mono);font-size:11.5px;color:var(--dim);background:var(--card-2);border:1px solid var(--border);border-radius:5px;padding:1px 5px}
+/* summary chip row */
+.chg-sum{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:6px}
+.chg-chip{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11.5px;font-weight:600;color:var(--dim);
+  background:var(--card-2);border:1px solid var(--border);border-radius:999px;padding:4px 11px}
+.chg-chip .d{width:8px;height:8px;border-radius:3px;flex:none}
+.chg-chip.zero{opacity:.4}
+.chg-meta{font-family:var(--mono);font-size:11px;color:var(--faint);margin:2px 0 14px}
+.chg-meta b{color:var(--dim);font-weight:600}
+/* per-op groups */
+.chg-list{display:flex;flex-direction:column;gap:10px;max-height:54dvh;overflow-y:auto;margin:0 -4px;padding:0 4px}
+.chg-op{border:1px solid var(--border);border-radius:11px;background:linear-gradient(168deg,var(--card),var(--card-2));overflow:hidden}
+.chg-op-h{display:flex;align-items:center;gap:9px;padding:9px 12px;border-bottom:1px solid var(--border)}
+.chg-op-h .nm{font-family:var(--mono);font-size:13px;font-weight:700;color:var(--text)}
+.chg-op-h .mini{display:flex;gap:5px;margin-left:auto;flex-wrap:wrap}
+.chg-op-h .mini i{font-style:normal;font-family:var(--mono);font-size:10.5px;font-weight:700;padding:1px 6px;border-radius:999px}
+.chg-rows{display:flex;flex-direction:column}
+.chg-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 12px;align-items:center;padding:7px 12px;font-family:var(--mono);font-size:11px}
+.chg-row+.chg-row{border-top:1px solid var(--border)}
+.chg-row .cfg{color:var(--faint);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chg-row .cfg b{color:var(--dim);font-weight:600}
+.chg-row .mv{display:flex;align-items:center;gap:7px;justify-self:end;white-space:nowrap}
+.chg-row .st{font-weight:700}
+.chg-row .arr{color:var(--faint)}
+.chg-row .num{color:var(--faint);font-size:10px}
+.chg-more{font-family:var(--mono);font-size:10.5px;color:var(--faint);padding:7px 12px;border-top:1px solid var(--border)}
+.chg-kind{font-style:normal;font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding:1px 6px;border-radius:5px;flex:none}
+
 /* ---------- kpi ---------- */
 .kpis{display:grid;grid-template-columns:repeat(var(--kpi-cols,6),1fr);gap:13px;margin-bottom:18px}
 .kpi{
@@ -430,6 +461,12 @@ footer a{color:var(--dim);text-decoration:none;border-bottom:1px dotted #3a4d6e}
       </div>
     </div>
     <div class="spacer"></div>
+    <button class="suggest-btn" id="changesOpen" type="button" aria-haspopup="dialog"
+            title="See what changed since the previous probe run">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><path d="M11 18H8a2 2 0 0 1-2-2V9"/></svg>
+      <span class="st-label" id="changesLabel">Changes</span>
+    </button>
     <button class="suggest-btn" id="suggestOpen" type="button" aria-haspopup="dialog"
             title="Send a suggestion, report a result mismatch, or flag a bug">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -528,6 +565,25 @@ footer a{color:var(--dim);text-decoration:none;border-bottom:1px dotted #3a4d6e}
 </div>
 
 <div id="tip" role="tooltip"></div>
+
+<!-- "What changed" comparison modal -->
+<div class="modal-overlay" id="changesOverlay" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="changesTitle">
+    <button class="modal-x" id="changesClose" type="button" aria-label="Close">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+    </button>
+    <div class="modal-head">
+      <div class="modal-ico">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><path d="M11 18H8a2 2 0 0 1-2-2V9"/></svg>
+      </div>
+      <div>
+        <h2 id="changesTitle">What changed</h2>
+        <p class="modal-sub" id="changesSub">Differences between this run and the previous probe snapshot.</p>
+      </div>
+    </div>
+    <div id="changesBody"></div>
+  </div>
+</div>
 
 <!-- Suggestions / feedback modal -->
 <div class="modal-overlay" id="suggestOverlay" hidden>

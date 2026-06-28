@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Transform ops.csv into a compact data.js for the dashboard."""
-import csv, re, json, datetime
+import csv, re, json, os, glob, datetime
 from collections import defaultdict, Counter
 
 SRC = "ops.csv"
 OUT = "public/data.js"
+HISTORY_DIR = "history"          # dated probe snapshots written by --dated
 
 # --- status taxonomy ------------------------------------------------------
 # code -> (label, short, palette-role)
@@ -206,6 +207,127 @@ ulp_dist = {
     },
 }
 
+# --- run-to-run comparison ("what changed") --------------------------------
+# Diff the current matrix (ops.csv) against the previous dated snapshot in
+# history/. Reuses classify() so both sides bucket identically.
+FAIL_STATES = {"PCC_FAIL", "ERROR", "NOT_IN_TTNN", "SKIP"}
+
+
+def _to_float(s):
+    s = (s or "").strip()
+    if not s:
+        return None
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
+def parse_matrix(path):
+    """Path -> {(op,dt,ly,mem): {'s':status, 'pcc':float|None, 'ulp':float|None}}.
+    Skips the '-' placeholder dims (NO_OP rows) so keys are real configs."""
+    out = {}
+    with open(path, newline="") as fh:
+        rd = csv.reader(fh)
+        next(rd, None)  # header
+        for r in rd:
+            if len(r) < 6 or r[1] == "-":
+                continue
+            status, _ = classify(r[4], r[5].strip())
+            pcc = _to_float(r[7]) if len(r) >= 8 else None
+            ulp = _to_float(r[8]) if len(r) >= 9 else None
+            out[(r[0], r[1], r[2], r[3])] = {"s": status, "pcc": pcc, "ulp": ulp}
+    return out
+
+
+def _date_from(path):
+    m = re.search(r"(\d{4}-\d{2}-\d{2})", os.path.basename(path))
+    return m.group(1) if m else ""
+
+
+def diff_kind(a, b):
+    """Change kind for baseline `a` -> current `b` (both {'s','pcc','ulp'}),
+    or None if nothing meaningful changed."""
+    if a["s"] != b["s"]:
+        if b["s"] == "PASS":
+            return "improved"
+        if a["s"] == "PASS":
+            return "regressed"
+        return "statusChange"
+    # same status -> flag a meaningful numeric move (pcc by >=0.01 or ULP bucket)
+    if a["pcc"] is not None and b["pcc"] is not None and abs(a["pcc"] - b["pcc"]) >= 0.01:
+        return "shift"
+    if a["ulp"] is not None and b["ulp"] is not None and ulp_bucket(a["ulp"]) != ulp_bucket(b["ulp"]):
+        return "shift"
+    return None
+
+
+def compute_changes():
+    """Build the `changes` payload: current (ops.csv) vs the previous dated
+    snapshot. Returns baseline=None when there aren't two snapshots to compare."""
+    dated = sorted(glob.glob(os.path.join(HISTORY_DIR, "eltwise_support_matrix_*.csv")),
+                   key=_date_from)
+    base = {"baseline": None, "current": "current",
+            "summary": {k: 0 for k in ("improved", "regressed", "new", "removed", "statusChange", "shifted")},
+            "byOp": []}
+    if len(dated) < 2:
+        return base
+    # newest dated file == current ops.csv; baseline is the previous run
+    base["current"] = _date_from(dated[-1]) or "current"
+    base["baseline"] = _date_from(dated[-2]) or None
+    try:
+        cur = parse_matrix(SRC)
+        prev = parse_matrix(dated[-2])
+    except OSError:
+        return base
+
+    per_op = defaultdict(lambda: {"items": [], "counts": Counter()})
+    SUM = base["summary"]
+    for key in set(cur) | set(prev):
+        op, dt, ly, mem = key
+        a, b = prev.get(key), cur.get(key)
+        if a is None:
+            kind = "new"; SUM["new"] += 1
+            frm, to = None, b
+        elif b is None:
+            kind = "removed"; SUM["removed"] += 1
+            frm, to = a, None
+        else:
+            kind = diff_kind(a, b)
+            if kind is None:
+                continue
+            SUM["shifted" if kind == "shift" else kind] += 1
+            frm, to = a, b
+        rec = per_op[op]
+        rec["counts"][kind] += 1
+        # cap stored items per op; still count everything in the summary
+        if len(rec["items"]) < 20:
+            def _side(x):
+                return None if x is None else {"s": x["s"], "pcc": x["pcc"], "ulp": x["ulp"]}
+            rec["items"].append({"dt": dt, "ly": ly, "mem": mem, "kind": kind,
+                                 "from": _side(frm), "to": _side(to)})
+
+    # rank ops: regressions first, then new/removed/changes, cap the list
+    def op_weight(c):
+        return (c["regressed"], c["removed"], c["statusChange"], c["new"], c["shift"], c["improved"])
+
+    by_op = []
+    for op, rec in per_op.items():
+        c = rec["counts"]
+        total_items = sum(c.values())
+        by_op.append({
+            "op": op,
+            "counts": {k: c.get(k, 0) for k in ("improved", "regressed", "new", "removed", "statusChange", "shift")},
+            "items": rec["items"],
+            "more": max(0, total_items - len(rec["items"])),
+        })
+    by_op.sort(key=lambda o: op_weight(o["counts"]), reverse=True)
+    base["byOp"] = by_op[:60]
+    return base
+
+
+changes = compute_changes()
+
 data = {
     "meta": {
         "total": len(rows),
@@ -229,6 +351,7 @@ data = {
     "opLeaderboard": op_rows,
     "errFamilies": err_top,
     "ulpDist": ulp_dist,
+    "changes": changes,
 }
 
 with open(OUT, "w") as f:
@@ -236,7 +359,6 @@ with open(OUT, "w") as f:
     json.dump(data, f, separators=(",", ":"))
     f.write(";")
 
-import os
 print(f"wrote {OUT}  ({os.path.getsize(OUT)/1024:.0f} KB)")
 print("status:", dict(status_counts))
 print("ops:", len(ops), "rows:", len(rows), "reasons:", len(reasons))

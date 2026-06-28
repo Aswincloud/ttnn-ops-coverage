@@ -88,6 +88,51 @@ PROBE_DTYPES=bfloat16,float32 PROBE_LAYOUTS=tile PROBE_MEMS=dram,height \
 
 ---
 
+## Dated snapshots & the dashboard "What changed" view
+
+The dashboard has a **Changes** button that diffs the current matrix against the
+*previous* probe run — which ops/configs newly pass, regressed, were added/removed,
+or had a meaningful PCC/ULP shift. It's powered entirely at build time from
+committed CSV snapshots; there's no database.
+
+**How to feed it.** Run the probe with `--dated`, which writes a per-day snapshot
+into `history/` *and* refreshes the stable CSV:
+
+```bash
+python .../eltwise_support_probe.py --dated
+#   -> history/eltwise_support_matrix_YYYY-MM-DD.csv   (the dated snapshot)
+#   -> eltwise_support_matrix.csv                      (stable copy, as usual)
+```
+
+Then promote the run to the dashboard's data source and commit **both** files:
+
+```bash
+cp eltwise_support_matrix.csv ops.csv
+git add ops.csv history/eltwise_support_matrix_YYYY-MM-DD.csv
+git commit -m "probe run YYYY-MM-DD"
+```
+
+**What the dashboard does at build time** (`process.py` → `compute_changes()`):
+
+- Lists `history/eltwise_support_matrix_*.csv`, sorts by the `YYYY-MM-DD` in the name.
+- The **newest** dated file is this run (it equals `ops.csv`); the **baseline** is the
+  **second-newest** — i.e. the previous committed run.
+- Keys every config by `(op, dtype, layout, mem)` and classifies each into:
+  `improved` (→ pass), `regressed` (pass →), `statusChange`, `new`, `removed`, or
+  `shift` (status unchanged but `|Δpcc| ≥ 0.01` **or** the ULP bucket moved).
+- Ships a compact, capped `changes` payload (≤ 60 ops, ≤ 20 items/op, with overflow
+  counts) in `data.js`.
+
+**Ships dark until there's history.** With fewer than two dated snapshots committed
+the button honestly says *"No baseline snapshot yet"* — it lights up the moment two
+`--dated` runs exist in `history/`.
+
+**Retention.** Only the *previous* snapshot is needed for the current diff, so old
+`history/*.csv` can be pruned (keep the last ~2) to bound repo size — each raw CSV is
+~700 KB. `history/.gitkeep` keeps the directory present even when empty.
+
+---
+
 ## Single-op mode (and crash isolation)
 
 ```bash

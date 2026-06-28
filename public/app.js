@@ -558,6 +558,128 @@ addEventListener('keydown',e=>{
 });
 
 /* =========================================================
+   WHAT CHANGED  (build-time diff vs previous snapshot)
+========================================================= */
+// colour + label per change kind (regressions red, improvements green …)
+const KMETA = {
+  improved:    {c:'#10b981', label:'improved'},
+  regressed:   {c:'#ef4444', label:'regressed'},
+  new:         {c:'#38bdf8', label:'new'},
+  removed:     {c:'#64748b', label:'removed'},
+  statusChange:{c:'#a78bfa', label:'changed'},
+  shift:       {c:'#f59e0b', label:'shifted'},
+};
+const esc = s => String(s).replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));
+
+function chgDate(d){
+  if(!d || d==='current') return d||'';
+  const t=Date.parse(d+'T00:00:00Z');
+  return Number.isNaN(t) ? d
+    : new Date(t).toLocaleDateString(undefined,{month:'short',day:'numeric',timeZone:'UTC'});
+}
+// a from/to side -> short status + numeric tail (pcc / ulp), or "—" if absent
+function chgSide(side){
+  if(!side) return `<span class="st" style="color:var(--faint)">—</span>`;
+  const m=SMETA[side.s]||SMETA.SKIP;
+  let tail='';
+  if(side.pcc!=null) tail+=` <span class="num">pcc ${(+side.pcc).toFixed(3)}</span>`;
+  if(side.ulp!=null) tail+=` <span class="num">ulp ${(+side.ulp).toFixed(side.ulp<10?2:0)}</span>`;
+  return `<span class="st" style="color:${m.c}">${m.short}</span>${tail}`;
+}
+
+function renderChanges(){
+  const C = D.changes, body=$('#changesBody'), sub=$('#changesSub'), label=$('#changesLabel');
+  if(!body) return;
+
+  // No baseline yet → honest empty state; button stays but says "no baseline".
+  if(!C || !C.baseline){
+    if(label) label.textContent='Changes';
+    if(sub) sub.textContent='Comparison appears once two dated probe runs exist.';
+    body.innerHTML=
+      `<div class="chg-empty">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><path d="M11 18H8a2 2 0 0 1-2-2V9"/></svg>
+        <div><b style="color:var(--dim)">No baseline snapshot yet.</b><br>
+        The comparison turns on once the probe has run with <code>--dated</code> on two
+        separate days and both snapshots are committed. Until then there's nothing to diff against.</div>
+      </div>`;
+    return;
+  }
+
+  if(sub) sub.textContent=`Changes from the ${chgDate(C.baseline)} run to ${chgDate(C.current)}.`;
+  if(label) label.textContent='Changes · vs '+chgDate(C.baseline);
+
+  // summary chips (zeros are dimmed so the row's shape stays stable)
+  const order=['improved','regressed','new','removed','statusChange','shift'];
+  const S=C.summary;
+  // summary stores 'shifted'; the per-item kind is 'shift' — map between them
+  const sval={improved:S.improved,regressed:S.regressed,new:S.new,removed:S.removed,
+              statusChange:S.statusChange,shift:S.shifted};
+  const chips=order.map(k=>{
+    const m=KMETA[k], v=sval[k]||0;
+    return `<span class="chg-chip${v?'':' zero'}"><span class="d" style="background:${m.c}"></span>${v} ${m.label}</span>`;
+  }).join('');
+
+  const ops=C.byOp.map(o=>{
+    const mini=order.filter(k=>o.counts[k]).map(k=>{
+      const m=KMETA[k];
+      return `<i style="color:${m.c};background:${m.c}1f">${o.counts[k]} ${m.label}</i>`;
+    }).join('');
+    const rows=o.items.map(it=>{
+      const m=KMETA[it.kind]||KMETA.statusChange;
+      const cfg=`<b>${esc(it.dt)}</b> · ${esc(it.ly)}·${esc(it.mem)}`;
+      let mv;
+      if(it.kind==='new')          mv=`<span class="arr">+</span>${chgSide(it.to)}`;
+      else if(it.kind==='removed') mv=`${chgSide(it.from)}<span class="arr">→ ✕</span>`;
+      else                         mv=`${chgSide(it.from)}<span class="arr">→</span>${chgSide(it.to)}`;
+      return `<div class="chg-row"><span class="cfg">${cfg}</span>
+        <span class="mv"><span class="chg-kind" style="color:${m.c};background:${m.c}1f">${m.label}</span>${mv}</span></div>`;
+    }).join('');
+    const more=o.more?`<div class="chg-more">+${o.more} more change${o.more>1?'s':''} in ${esc(o.op)}</div>`:'';
+    return `<div class="chg-op">
+      <div class="chg-op-h"><span class="nm">${esc(o.op)}</span><span class="mini">${mini}</span></div>
+      <div class="chg-rows">${rows}${more}</div></div>`;
+  }).join('');
+
+  const total=order.reduce((a,k)=>a+(sval[k]||0),0);
+  body.innerHTML=
+    `<div class="chg-sum">${chips}</div>
+     <div class="chg-meta"><b>${total}</b> config change${total===1?'':'s'} across <b>${C.byOp.length}</b> op${C.byOp.length===1?'':'s'} · baseline <b>${esc(chgDate(C.baseline))}</b></div>
+     <div class="chg-list">${ops||'<div class="chg-empty">No differences from the previous run.</div>'}</div>`;
+}
+
+(function changesModal(){
+  const overlay=$('#changesOverlay'); if(!overlay) return;
+  const openBtn=$('#changesOpen'), closeEls=[$('#changesClose')];
+  let lastFocus=null;
+  function open(){
+    lastFocus=document.activeElement;
+    overlay.hidden=false; document.body.style.overflow='hidden';
+    addEventListener('keydown',onKey);
+    setTimeout(()=>{ const x=$('#changesClose'); x&&x.focus(); },40);
+  }
+  function close(){
+    overlay.hidden=true; document.body.style.overflow='';
+    removeEventListener('keydown',onKey);
+    if(lastFocus&&lastFocus.focus) lastFocus.focus();
+  }
+  function onKey(e){
+    if(e.key==='Escape'){ e.preventDefault(); close(); }
+    if(e.key==='Tab') trapTab(e);
+  }
+  function trapTab(e){
+    const f=overlay.querySelectorAll('button,input,select,textarea,a[href]');
+    const vis=[...f].filter(el=>!el.disabled&&el.offsetParent!==null);
+    if(!vis.length) return;
+    const first=vis[0], last=vis[vis.length-1];
+    if(e.shiftKey&&document.activeElement===first){ e.preventDefault(); last.focus(); }
+    else if(!e.shiftKey&&document.activeElement===last){ e.preventDefault(); first.focus(); }
+  }
+  openBtn&&openBtn.addEventListener('click',open);
+  closeEls.forEach(el=>el&&el.addEventListener('click',close));
+  overlay.addEventListener('mousedown',e=>{ if(e.target===overlay) close(); });
+})();
+
+/* =========================================================
    SUGGESTIONS / FEEDBACK MODAL
 ========================================================= */
 (function feedback(){
@@ -663,6 +785,7 @@ renderDims();
 renderErr();
 renderSnapshot();
 renderUlp();
+renderChanges();
 renderChips();
 renderHead();
 renderTable();
