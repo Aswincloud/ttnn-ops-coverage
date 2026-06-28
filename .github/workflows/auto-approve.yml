@@ -1,13 +1,18 @@
 name: Auto-approve admin PRs
 
 # Automatically approve a pull request when its author is a member of the
-# Aswincloud/admins team.
+# Aswincloud/admins team. It ONLY approves — it never merges, so you stay in
+# control of when to merge and can push more changes first (a push dismisses
+# the approval and re-fires this workflow).
 #
-# Identity: the "Aswincloud Bot" GitHub App (org-owned automation), via a
-# short-lived installation token minted per run. One token does both jobs —
-# reads org team membership (needs Members: Read) and posts the approval (needs
-# Pull requests: write) — so there are no long-lived personal PATs to rotate,
-# and reviews show as `aswincloud-bot[bot]`. Secrets: APP_ID, APP_PRIVATE_KEY.
+# Two identities, split by a hard GitHub constraint:
+#   - Membership read  -> "Aswincloud Bot" GitHub App (short-lived token minted
+#     per run; needs Members: Read). Replaces the old ORG_READ_TOKEN PAT.
+#   - The approval      -> WRITE_ACCESS_PAT, a real write-collaborator USER.
+#     This is REQUIRED: GitHub does not count an app/bot review toward a
+#     ruleset's required-approval count — only a user-with-write review does.
+#     (We proved this: the app's approval left reviewDecision=REVIEW_REQUIRED.)
+# Secrets: APP_ID, APP_PRIVATE_KEY (app) and WRITE_ACCESS_PAT (approver).
 #
 # pull_request_target runs in the BASE repo context (so the secrets are
 # available even for fork PRs). Safe here: the job never checks out or runs the
@@ -61,32 +66,46 @@ jobs:
             echo "is_admin=false" >> "$GITHUB_OUTPUT"
           fi
 
-      # 2) Approve the PR — only when the author is an admin. The bot is never
-      #    the PR author, so there's no self-approval case to handle.
+      # 2) Approve the PR — only when the author is an admin.
+      #    This uses WRITE_ACCESS_PAT (a real write-collaborator USER), not the
+      #    app token, on purpose: GitHub does NOT count an app/bot review toward
+      #    a ruleset's required-approval count — only a review from a user with
+      #    write access satisfies it. The approval is all this step does; it
+      #    never merges, so you stay in control of WHEN it merges and can push
+      #    further changes first (a push dismisses the review and re-fires this).
       - name: Approve the PR
         if: steps.member.outputs.is_admin == 'true'
         env:
-          GH_TOKEN: ${{ steps.app.outputs.token }}
+          GH_TOKEN: ${{ secrets.WRITE_ACCESS_PAT }}
           REPO:     ${{ github.repository }}
           PR:       ${{ github.event.pull_request.number }}
           AUTHOR:   ${{ github.event.pull_request.user.login }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          # the app's reviews are authored by "<app-slug>[bot]"
-          ME:       ${{ steps.app.outputs.app-slug }}[bot]
           ORG:      Aswincloud
           TEAM:     admins
         run: |
           set -euo pipefail
 
-          # Don't stack reviews: if the bot already approved this exact commit,
+          ME="$(gh api user --jq '.login')"
+
+          # Don't stack reviews: if this user already approved this exact commit,
           # stop. (Re-runs on `synchronize` then become no-ops.)
           already="$(gh api "repos/${REPO}/pulls/${PR}/reviews" --paginate \
             --jq "[.[] | select(.user.login==\"${ME}\" and .state==\"APPROVED\" and .commit_id==\"${HEAD_SHA}\")] | length")"
           if [ "${already}" -gt 0 ]; then
-            echo "↷ Already approved ${HEAD_SHA} as ${ME} — skipping."
+            echo "↷ Already approved ${HEAD_SHA} as @${ME} — skipping."
+            exit 0
+          fi
+
+          # GitHub forbids approving your OWN PR, so if the token's user is the
+          # author, comment instead of failing.
+          if [ "${ME}" = "${AUTHOR}" ]; then
+            echo "↷ Token user (@${ME}) is the PR author — GitHub blocks self-approval; leaving a note."
+            gh pr comment "${PR}" --repo "${REPO}" \
+              --body "Auto-approve skipped: @${AUTHOR} is an admin, but the approver account is the author and GitHub doesn't allow approving your own PR." || true
             exit 0
           fi
 
           gh pr review "${PR}" --repo "${REPO}" --approve \
             --body "Auto-approved: @${AUTHOR} is a member of @${ORG}/${TEAM}."
-          echo "✓ Approved PR #${PR} as ${ME}."
+          echo "✓ Approved PR #${PR} as @${ME}."
