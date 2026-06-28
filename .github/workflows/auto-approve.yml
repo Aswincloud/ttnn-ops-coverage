@@ -1,0 +1,74 @@
+name: Auto-approve admin PRs
+
+# Automatically approve a pull request when its author is a member of the
+# Aswincloud/admins team. Uses the org PAT (WRITE_ACCESS_PAT) because:
+#   - reading org team membership needs more than the default GITHUB_TOKEN, and
+#   - the approving review must come from an account with write access.
+#
+# pull_request_target runs in the BASE repo context (so the secret is available
+# even for fork PRs). This is safe here: the job never checks out or runs the
+# PR's code — it only calls the GitHub API.
+
+on:
+  pull_request_target:
+    types: [opened, reopened, ready_for_review, synchronize]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+# One run per PR; a newer event supersedes an in-flight one.
+concurrency:
+  group: auto-approve-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  approve:
+    runs-on: ubuntu-latest
+    # Skip drafts — approve once it's a real review candidate.
+    if: github.event.pull_request.draft == false
+    steps:
+      - name: Approve if the author is in Aswincloud/admins
+        env:
+          GH_TOKEN: ${{ secrets.WRITE_ACCESS_PAT }}
+          REPO:     ${{ github.repository }}
+          PR:       ${{ github.event.pull_request.number }}
+          AUTHOR:   ${{ github.event.pull_request.user.login }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          ORG:      Aswincloud
+          TEAM:     admins
+        run: |
+          set -euo pipefail
+
+          # 1) Is the PR author an ACTIVE member of the admins team?
+          state="$(gh api "orgs/${ORG}/teams/${TEAM}/memberships/${AUTHOR}" \
+                     --jq '.state' 2>/dev/null || true)"
+          if [ "${state}" != "active" ]; then
+            echo "↷ @${AUTHOR} is not an active member of @${ORG}/${TEAM} — nothing to do."
+            exit 0
+          fi
+          echo "✓ @${AUTHOR} is a member of @${ORG}/${TEAM}."
+
+          # 2) Don't stack reviews: if the token's own user already approved this
+          #    exact commit, stop. (Re-runs on `synchronize` then become no-ops.)
+          ME="$(gh api user --jq '.login')"
+          already="$(gh api "repos/${REPO}/pulls/${PR}/reviews" --paginate \
+            --jq "[.[] | select(.user.login==\"${ME}\" and .state==\"APPROVED\" and .commit_id==\"${HEAD_SHA}\")] | length")"
+          if [ "${already}" -gt 0 ]; then
+            echo "↷ Already approved ${HEAD_SHA} as @${ME} — skipping."
+            exit 0
+          fi
+
+          # 3) Approve. GitHub forbids approving your OWN PR, so if the token's
+          #    user is the author, fall back to a friendly comment instead of
+          #    failing the workflow.
+          if [ "${ME}" = "${AUTHOR}" ]; then
+            echo "↷ Token user (@${ME}) is the PR author — GitHub blocks self-approval; leaving a note."
+            gh pr comment "${PR}" --repo "${REPO}" \
+              --body "Auto-approve skipped: @${AUTHOR} is an admin, but the bot account is the author and GitHub doesn't allow approving your own PR." || true
+            exit 0
+          fi
+
+          gh pr review "${PR}" --repo "${REPO}" --approve \
+            --body "Auto-approved: @${AUTHOR} is a member of @${ORG}/${TEAM}."
+          echo "✓ Approved PR #${PR} as @${ME}."
