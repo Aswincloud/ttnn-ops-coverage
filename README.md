@@ -43,7 +43,7 @@ dtypes are graded by **exact equality** (PCC shown for reference only).
 - **Numerical accuracy (ULP)** — distribution of max per-element error in [ULP](https://en.wikipedia.org/wiki/Unit_in_the_last_place), log-bucketed; toggle between dtypes
 - **Top hard-error signatures** — the most common device assertions, grouped by `source_file:line`
 - **Coverage snapshot** — how configs split between verifiable and unverifiable
-- **Operation leaderboard** — every op, sortable by any column, searchable. **Click a row** to expand a `dtype × layout·mem` heatmap; a **broadcast-mode toggle** (none / scalar / row / col) switches which mode the matrix shows; **hover any cell** for the exact status, broadcast mode, input range, PCC, ULP, and failure reason.
+- **Operation leaderboard** — every op, sortable by any column, searchable. **Click a row** to expand a `dtype × layout·mem` heatmap; for binary/ternary ops an **inline broadcast-mode toggle** (none / scalar / row / col) right in the matrix header switches which mode the grid shows — it swaps in place so you never scroll away; **hover any cell** for the exact status, broadcast mode, input range, PCC, ULP, and failure reason.
 
 ### Run-to-run comparison
 

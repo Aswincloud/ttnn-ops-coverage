@@ -318,7 +318,12 @@ const state = {
   active:new Set(ORDER),         // which statuses are "on"
   solo:null,                     // soloed status or null
   open:new Set(),                // expanded op rows
+  bmode:{},                      // per-op broadcast mode for the expanded matrix
 };
+// default broadcast mode for a freshly-opened matrix — 'none' when present
+// (the always-there mode), else the first available.
+const DEFAULT_BMODE = (D.meta.bcasts && D.meta.bcasts.includes('none'))
+  ? 'none' : (D.meta.bcasts?.[0] || 'none');
 // status columns are dropped when that status has zero configs in the dataset
 const COLS=[
   {k:'op', label:'Operation', num:false},
@@ -447,6 +452,19 @@ function renderTable(){
       renderTable();
     });
   });
+  // inline broadcast toggle inside an expanded matrix. Swap that op's mode and
+  // re-render JUST its detail row in place — no full table rebuild, so the page
+  // doesn't jump and you stay exactly where you were looking. stopPropagation so
+  // the click doesn't bubble up and collapse the row.
+  $$('#tbody .mtx-bchip').forEach(ch=>{
+    ch.addEventListener('click',e=>{
+      e.stopPropagation();
+      const op=ch.dataset.op;
+      if(state.bmode[op]===ch.dataset.k) return;  // already active
+      state.bmode[op]=ch.dataset.k;
+      swapDetail(op);
+    });
+  });
   // composition bar tooltips
   $$('#tbody .cellbar .track i').forEach(i=>{
     i.addEventListener('mousemove',e=>showTip(`<div class="t-r">${i.title}</div>`,e));
@@ -454,30 +472,56 @@ function renderTable(){
   });
   bindMatrix();
 }
+// Replace one op's expanded detail row in place (mode switch) and rebind only
+// the affected handlers, so switching broadcast mode never moves the page.
+function swapDetail(op){
+  const opRow=$(`#tbody tr.op-row[data-op="${CSS.escape(op)}"]`);
+  if(!opRow) return;
+  const detail=opRow.nextElementSibling;
+  if(!detail||!detail.classList.contains('detail')) return;
+  const tmp=document.createElement('tbody');
+  tmp.innerHTML=detailRow(op);
+  const fresh=tmp.firstElementChild;
+  detail.replaceWith(fresh);
+  // rebind only the new row's chips + cell tooltips (scoped — leaves other open
+  // matrices' handlers untouched)
+  fresh.querySelectorAll('.mtx-bchip').forEach(ch=>{
+    ch.addEventListener('click',e=>{
+      e.stopPropagation();
+      if(state.bmode[op]===ch.dataset.k) return;
+      state.bmode[op]=ch.dataset.k;
+      swapDetail(op);
+    });
+  });
+  bindMatrix(fresh);
+}
 
 /* ---- per-op drill-down: dtype × (layout∙mem) matrix ---- */
-// Active broadcast mode for the matrix. Binary ops have up to 4 rows per
-// (dt,ly,mem) — one per mode — so the matrix shows ONE mode at a time (chips
-// below the table switch it). 'none' is the always-present default; unary ops
-// only ever have 'none' rows.
-let bcastSel = (D.meta.bcasts && D.meta.bcasts.includes('none')) ? 'none' : (D.meta.bcasts?.[0] || 'none');
-// Broadcast-mode chip strip above the leaderboard. Hidden when there's only one
-// mode (nothing to switch). Clicking a chip re-renders open matrices for that
-// mode (mirrors the ULP ulpSel toggle pattern).
-function renderBcastChips(){
-  const bar=$('#bcastBar'), wrap=$('#bcastChips');
-  const modes=D.meta.bcasts||[];
-  if(!bar||!wrap||modes.length<2){ if(bar) bar.hidden=true; return; }
-  bar.hidden=false;
-  wrap.innerHTML=modes.map(m=>`<span class="ulp-chip${bcastSel===m?' active':''}" data-k="${m}">${m}</span>`).join('');
-  $$('#bcastChips .ulp-chip').forEach(ch=>ch.addEventListener('click',()=>{
-    bcastSel=ch.dataset.k;
-    renderBcastChips();   // refresh active state
-    renderTable();        // rebuild any open matrices for the new mode
-  }));
+// A binary op has up to 4 rows per (dt,ly,mem) — one per broadcast mode — so the
+// matrix shows ONE mode at a time. The mode toggle lives INSIDE each expanded
+// matrix (state.bmode[op]) so you switch it right where you're looking, without
+// scrolling back to a global control. Unary ops only ever have 'none' rows, so
+// they don't get a toggle at all.
+
+// Which broadcast modes does this op actually have rows for? Drives whether the
+// toggle is shown (≥2 modes) and which chips are offered.
+function opBcastModes(op){
+  const opi=D.ops.indexOf(op);
+  const seen=new Set();
+  for(const r of D.rows){ if(r[0]===opi) seen.add(D.bcasts[r[9]]); }
+  // keep them in the canonical meta order (none, scalar, row, col)
+  return (D.meta.bcasts||[]).filter(m=>seen.has(m));
 }
-function buildMatrix(op){
-  // collect this op's rows for the selected broadcast mode
+// The active mode for this op's matrix: whatever the user picked, else the
+// default — but clamp to a mode the op actually has (so a unary op never sits on
+// a stale 'scalar' and shows empty).
+function bmodeFor(op){
+  const modes=opBcastModes(op);
+  const want=state.bmode[op]||DEFAULT_BMODE;
+  return modes.includes(want) ? want : (modes[0]||DEFAULT_BMODE);
+}
+function buildMatrix(op, bmode){
+  // collect this op's rows for the given broadcast mode
   const opi=D.ops.indexOf(op);
   const dts=D.meta.dtypes, lys=D.meta.layouts, mems=D.meta.mems;
   const cols=[]; lys.forEach(l=>mems.forEach(m=>cols.push({l,m,key:l+'·'+m})));
@@ -485,7 +529,7 @@ function buildMatrix(op){
   const map={}; dts.forEach(d=>map[d]={});
   for(const r of D.rows){
     if(r[0]!==opi) continue;
-    if(D.bcasts[r[9]]!==bcastSel) continue;       // show only the active mode
+    if(D.bcasts[r[9]]!==bmode) continue;          // show only the active mode
     const dt=D.dts[r[1]], ly=D.lys[r[2]], mem=D.mems[r[3]];
     if(dt==='-'||ly==='-'||mem==='-') continue;
     map[dt][ly+'·'+mem]={status:D.statusList[r[4]], reason:D.reasons[r[5]], pcc:r[6], ulp:r[7], inputs:(r[8]>=0?D.inputs[r[8]]:''), bcast:D.bcasts[r[9]]};
@@ -493,7 +537,8 @@ function buildMatrix(op){
   return {dts,cols,map};
 }
 function detailRow(op){
-  const {dts,cols,map}=buildMatrix(op);
+  const bmode=bmodeFor(op);
+  const {dts,cols,map}=buildMatrix(op, bmode);
   const o=D.opLeaderboard.find(x=>x.op===op);
   const colW=`minmax(56px,1fr)`;
   let grid=`grid-template-columns:96px repeat(${cols.length},${colW})`;
@@ -512,12 +557,18 @@ function detailRow(op){
   // configs shown = cells present for the active broadcast mode (not o.total,
   // which sums all modes). Surface the mode so the count makes sense.
   const shown=dts.reduce((n,dt)=>n+cols.reduce((k,c)=>k+(map[dt][c.key]?1:0),0),0);
-  const modeNote = (D.meta.bcasts&&D.meta.bcasts.length>1)
-    ? `<span class="dotsep"></span> broadcast: <b>${bcastSel}</b>` : '';
+  // inline broadcast toggle — only when this op actually has >1 mode (binary/
+  // ternary). Unary ops get a static "broadcast: none" note instead of chips.
+  const modes=opBcastModes(op);
+  const modeCtl = modes.length>1
+    ? `<span class="dotsep"></span><span class="mtx-bcast"><span class="mtx-bcast-lab">broadcast</span>`+
+      modes.map(m=>`<span class="ulp-chip mtx-bchip${m===bmode?' active':''}" data-op="${op}" data-k="${m}">${m}</span>`).join('')+
+      `</span>`
+    : (D.meta.bcasts&&D.meta.bcasts.length>1 ? `<span class="dotsep"></span> broadcast: <b>none</b>` : '');
   return `<tr class="detail"><td colspan="${COLS.length}"><div class="detail-inner">
     <div class="matrix-title">
       <b>${op}</b> configuration matrix
-      <span class="dotsep"></span> ${shown} configs${modeNote}
+      <span class="dotsep"></span> ${shown} configs${modeCtl}
       <span class="dotsep"></span> hover a cell for the exact result
     </div>
     <div class="mtx" style="${grid}">${cells}</div>
@@ -564,8 +615,12 @@ function bcastLine(raw){
   if(!raw) return '';
   return `<div class="t-in">broadcast <b>${raw}</b></div>`;
 }
-function bindMatrix(){
-  $$('#tbody .cell:not(.c-empty)').forEach(c=>{
+function bindMatrix(root){
+  // bind cell tooltips; scope to `root` (one detail row) when given so a single
+  // mode-swap doesn't re-bind every other open matrix, else the whole #tbody.
+  const scope = root || document.querySelector('#tbody');
+  if(!scope) return;
+  scope.querySelectorAll('.cell:not(.c-empty)').forEach(c=>{
     c.addEventListener('mousemove',e=>{
       const s=c.dataset.status, m=SMETA[s];
       let reason=c.dataset.reason||'';
@@ -824,7 +879,6 @@ renderSnapshot();
 renderUlp();
 renderChanges();
 renderChips();
-renderBcastChips();
 renderHead();
 renderTable();
 syncHeaderHeight();
