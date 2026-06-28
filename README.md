@@ -167,3 +167,5 @@ Because the build regenerates `data.js`, **`ops.csv` is the only file you ever n
 6. Emits a compact `window.DASH = {…}` payload (interned strings + integer-indexed rows) to `public/data.js`.
 
 Totals always reconcile to the row count — the script prints a status breakdown on every run.
+
+<!-- hybrid auto-approve test (close me) -->
