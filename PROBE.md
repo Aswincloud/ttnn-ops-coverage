@@ -1,4 +1,4 @@
-# Eltwise Support Probe
+# Eltwise Support Probe 
 
 `eltwise_support_probe.py` empirically maps which **configurations** every `ttnn`
 eltwise op supports, and whether the result matches a torch golden reference.
