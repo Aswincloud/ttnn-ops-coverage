@@ -308,31 +308,72 @@ def _corr(g, o):
         return None
 
 
+# ULP is only meaningful for float dtypes. bfloat8_b shares bfloat16's resolution
+# (block-shared exponent), so it is measured in bf16; bf4_b is too coarse to map to a
+# torch dtype, and integers have no ULP -> these report blank.
+_ULP_TORCH = {ttnn.bfloat16: torch.bfloat16, ttnn.bfloat8_b: torch.bfloat16, ttnn.float32: torch.float32}
+
+
+def _ulp_size(x):
+    """Length of one ULP per element of x, measured at x's own dtype (Goldberg)."""
+    abs_x = torch.abs(x)
+    nxt = torch.nextafter(abs_x, torch.tensor(math.inf, dtype=x.dtype))
+    u = nxt - abs_x
+    dmax = torch.finfo(x.dtype).max
+    max_eps = dmax - torch.nextafter(torch.tensor(dmax, dtype=x.dtype), torch.tensor(-math.inf, dtype=x.dtype))
+    return torch.where(abs_x == dmax, max_eps, u)
+
+
+def max_ulp(golden, got, dtype):
+    """Max per-element error in ULP (|got-golden| / ULP(golden)) at the device's
+    float resolution, or None when ULP is undefined for this dtype."""
+    td = _ULP_TORCH.get(dtype)
+    if td is None:
+        return None
+    try:
+        g = golden.detach().to(td).flatten()
+        o = got.detach().to(td).flatten()
+        if g.shape != o.shape:
+            return None
+        mask = torch.isfinite(g) & torch.isfinite(o)
+        if mask.sum() == 0:
+            return None
+        g, o = g[mask], o[mask]
+        delta = (o - g).abs() / _ulp_size(g)
+        delta = delta[torch.isfinite(delta)]
+        if delta.numel() == 0:
+            return None
+        return float(delta.max())
+    except Exception:
+        return None
+
+
 def pcc_ok(golden, got, dtype):
-    """Return (verdict, pcc) where pcc is the numeric Pearson correlation (or None)."""
+    """Return (verdict, pcc, ulp): Pearson correlation and max ULP error (or None)."""
+    ulp = max_ulp(golden, got, dtype)
     try:
         g = golden.to(torch.float32).flatten()
         o = got.to(torch.float32).flatten()
         if g.shape != o.shape:
-            return "shape?", None
+            return "shape?", None, ulp
         if dtype in _INT_DTYPES:
             verdict = "pass" if torch.equal(golden.to(torch.int64), got.to(torch.int64)) else "fail"
-            return verdict, _corr(g, o)
+            return verdict, _corr(g, o), ulp
         mask = torch.isfinite(g) & torch.isfinite(o)
         if mask.sum() == 0:
-            return "nan", None
+            return "nan", None, ulp
         g, o = g[mask], o[mask]
         if g.numel() < 2 or torch.allclose(g, o, atol=1e-2, rtol=1e-2):
-            return "pass", _corr(g, o)
+            return "pass", _corr(g, o), ulp
         gc, oc = g - g.mean(), o - o.mean()
         denom = gc.norm() * oc.norm()
         if denom == 0:
-            return ("pass" if torch.allclose(g, o, atol=1e-2) else "fail"), None
+            return ("pass" if torch.allclose(g, o, atol=1e-2) else "fail"), None, ulp
         pcc = float((gc @ oc) / denom)
         thr = {ttnn.bfloat8_b: 0.97, ttnn.bfloat4_b: 0.90}.get(dtype, 0.99)
-        return ("pass" if pcc >= thr else f"fail({pcc:.3f})"), pcc
+        return ("pass" if pcc >= thr else f"fail({pcc:.3f})"), pcc, ulp
     except Exception as e:
-        return f"pcc_err:{str(e)[:30]}", None
+        return f"pcc_err:{str(e)[:30]}", None, ulp
 
 
 def build_args(base, dtype, layout, mem, device):
@@ -360,11 +401,11 @@ def finalize(out, golden, dtype):
         out = out[0]
     got = to_t(out)
     if golden is None:
-        return "OK", "no-golden", None
+        return "OK", "no-golden", None, None
     if isinstance(golden, (list, tuple)):
         golden = golden[0]
-    verdict, pcc = pcc_ok(golden, got, dtype)
-    return "OK", verdict, pcc
+    verdict, pcc, ulp = pcc_ok(golden, got, dtype)
+    return "OK", verdict, pcc, ulp
 
 
 def _grad_clone(x):
@@ -516,9 +557,9 @@ def run_op(name, fn, gf, dtype, layout, mem, device):
         except Exception:
             golden = None
         if golden is None:
-            return "OK", "no-golden", None
-        verdict, pcc = pcc_ok(golden, got, dtype)
-        return "OK", verdict, pcc
+            return "OK", "no-golden", None, None
+        verdict, pcc, ulp = pcc_ok(golden, got, dtype)
+        return "OK", verdict, pcc, ulp
 
     # complex producer: complex_tensor(real, imag) -> ComplexTensor; golden = re/im roundtrip
     if base == "complex_tensor":
@@ -527,8 +568,8 @@ def run_op(name, fn, gf, dtype, layout, mem, device):
         out = ttnn.complex_tensor(re, im)
         got = _complex_to_torch(out)
         golden = torch.complex(re_ref.float(), im_ref.float())
-        verdict, pcc = pcc_ok(_real_view(golden), _real_view(got), dtype)
-        return "OK", verdict, pcc
+        verdict, pcc, ulp = pcc_ok(_real_view(golden), _real_view(got), dtype)
+        return "OK", verdict, pcc, ulp
 
     # complex consumers: take one ComplexTensor built from (real, imag)
     if base in COMPLEX_CONSUMERS:
@@ -546,9 +587,9 @@ def run_op(name, fn, gf, dtype, layout, mem, device):
         else:
             golden = call_golden(gf, (cin,), device)
         if golden is None:
-            return "OK", "no-golden", None
-        verdict, pcc = pcc_ok(_real_view(golden), _real_view(_complex_to_torch(out)), dtype)
-        return "OK", verdict, pcc
+            return "OK", "no-golden", None, None
+        verdict, pcc, ulp = pcc_ok(_real_view(golden), _real_view(_complex_to_torch(out)), dtype)
+        return "OK", verdict, pcc, ulp
 
     # backward ops with an op-specific signature (extra tensors / trailing scalars).
     # checked before the reduction smoke path so max_bw/min_bw use their real signature.
@@ -625,7 +666,7 @@ def run_op(name, fn, gf, dtype, layout, mem, device):
 
 
 CSV_PATH = os.path.join(os.path.dirname(__file__), "eltwise_support_matrix.csv")
-HEADER = ["op", "dtype", "layout", "mem", "accepted", "pcc_or_reason", "input_range", "pcc"]
+HEADER = ["op", "dtype", "layout", "mem", "accepted", "pcc_or_reason", "input_range", "pcc", "ulp"]
 
 
 def input_range(name, dtype):
@@ -645,10 +686,14 @@ def _fmt_pcc(pcc):
     return "" if pcc is None else f"{pcc:.6f}"
 
 
+def _fmt_ulp(u):
+    return "" if u is None else f"{u:.3f}"
+
+
 def probe_one(name, w, f, device):
     fn = getattr(ttnn, name, None)
     if fn is None or not callable(fn):
-        w.writerow([name, "-", "-", "-", "NO_OP", "not in ttnn", "", ""])
+        w.writerow([name, "-", "-", "-", "NO_OP", "not in ttnn", "", "", ""])
         f.flush()
         return
     try:
@@ -662,16 +707,18 @@ def probe_one(name, w, f, device):
                 # alone (--op) or as part of a full run, independent of iteration order.
                 seed = zlib.crc32(f"{name}/{dn}/{ln}/{mn}".encode()) ^ _BASE_SEED
                 torch.manual_seed(seed)
-                pcc = None
+                pcc = ulp = None
                 try:
-                    acc, detail, pcc = run_op(name, fn, gf, dtype, layout, mem, device)
+                    acc, detail, pcc, ulp = run_op(name, fn, gf, dtype, layout, mem, device)
                 except Exception as e:
                     # collapse to a single CSV-safe line; drop the volatile backtrace
                     # (pointer addresses change every process run -> non-deterministic).
                     acc = "FAIL"
                     msg = str(e).split("backtrace")[0]
                     detail = " | ".join(s.strip() for s in msg.strip().splitlines() if s.strip()).rstrip(" |")
-                w.writerow([name, dn, ln, mn, acc, detail, input_range(name, dtype), _fmt_pcc(pcc)])
+                w.writerow(
+                    [name, dn, ln, mn, acc, detail, input_range(name, dtype), _fmt_pcc(pcc), _fmt_ulp(ulp)]
+                )
                 f.flush()
 
 
