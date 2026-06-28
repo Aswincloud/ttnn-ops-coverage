@@ -432,7 +432,7 @@ function buildMatrix(op){
     if(r[0]!==opi) continue;
     const dt=D.dts[r[1]], ly=D.lys[r[2]], mem=D.mems[r[3]];
     if(dt==='-'||ly==='-'||mem==='-') continue;
-    map[dt][ly+'·'+mem]={status:D.statusList[r[4]], reason:D.reasons[r[5]]};
+    map[dt][ly+'·'+mem]={status:D.statusList[r[4]], reason:D.reasons[r[5]], pcc:r[6]};
   }
   return {dts,cols,map};
 }
@@ -450,7 +450,7 @@ function detailRow(op){
       if(!cell){ cells+=`<div class="cell c-empty"></div>`; return; }
       const m=SMETA[cell.status];
       const dark = cell.status==='SKIP'||cell.status==='NOT_IN_TTNN';
-      cells+=`<div class="cell" style="background:${m.c};color:${dark?'#cdd8ea':'#0a0e16'}" data-status="${cell.status}" data-dt="${dt}" data-cfg="${c.l}·${c.m}" data-reason="${(cell.reason||'').replace(/"/g,'&quot;')}">${m.short[0]}</div>`;
+      cells+=`<div class="cell" style="background:${m.c};color:${dark?'#cdd8ea':'#0a0e16'}" data-status="${cell.status}" data-dt="${dt}" data-cfg="${c.l}·${c.m}" data-pcc="${cell.pcc==null?'':cell.pcc}" data-reason="${(cell.reason||'').replace(/"/g,'&quot;')}">${m.short[0]}</div>`;
     });
   });
   return `<tr class="detail"><td colspan="${COLS.length}"><div class="detail-inner">
@@ -462,6 +462,24 @@ function detailRow(op){
     <div class="mtx" style="${grid}">${cells}</div>
   </div></td></tr>`;
 }
+// PCC threshold per FLOAT dtype (mirrors the probe: 0.99 default, 0.97 bf8, 0.90 bf4).
+// Integer dtypes are graded by EXACT equality, not PCC — their correlation is purely
+// informational, so it's labelled differently and never implies pass/fail by threshold.
+const PCC_THR={bfloat8_b:0.97, bfloat4_b:0.90};
+const INT_DT=new Set(['int32','uint32','uint16','uint8']);
+function pccLine(raw, dt, status){
+  if(raw===''||raw==null) return '';           // FAIL / no-golden rows have no PCC
+  const v=+raw; if(!isFinite(v)) return '';
+  // colour by the cell's ACTUAL verdict, not a threshold compare — for ints the
+  // threshold doesn't apply, and even for floats this keeps the number consistent
+  // with the cell colour (green only when the config actually passed).
+  const col = status==='PASS' ? 'var(--pass)' : 'var(--err)';
+  const note = INT_DT.has(dt)
+    ? `correlation · ${dt} graded by exact match`     // PCC is informational for ints
+    : `vs ≥${PCC_THR[dt]??0.99} threshold (${dt})`;
+  return `<div class="t-pcc">PCC <b style="color:${col}">${v.toFixed(4)}</b>`+
+         `<span class="t-thr">${note}</span></div>`;
+}
 function bindMatrix(){
   $$('#tbody .cell:not(.c-empty)').forEach(c=>{
     c.addEventListener('mousemove',e=>{
@@ -470,7 +488,8 @@ function bindMatrix(){
       if(reason.length>240) reason=reason.slice(0,240)+'…';
       showTip(tipHead(s)+
         `<div class="t-r"><b>${c.dataset.dt}</b> · ${c.dataset.cfg}<br>`+
-        (reason?reason.replace(/</g,'&lt;'):m.label)+`</div>`,e);
+        (reason?reason.replace(/</g,'&lt;'):m.label)+`</div>`+
+        pccLine(c.dataset.pcc, c.dataset.dt, s),e);
     });
     c.addEventListener('mouseleave',hideTip);
   });

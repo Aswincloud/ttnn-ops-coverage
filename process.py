@@ -66,7 +66,7 @@ def err_signature(short):
     return m.group(1) if m else short
 
 
-rows = []                      # compact [opIdx, dtIdx, lyIdx, memIdx, statusIdx, reasonIdx]
+rows = []                      # compact [opIdx, dtIdx, lyIdx, memIdx, statusIdx, reasonIdx, pcc|null]
 ops, dts, lys, mems = [], [], [], []
 oI, dI, lI, mI = {}, {}, {}, {}
 reasons, rI = [], {}
@@ -95,13 +95,23 @@ with open(SRC, newline="") as f:
         p = r[5].strip()
         status, short = classify(accepted, p)
 
+        # numeric Pearson correlation (CSV col 7, added by the probe). Empty for
+        # FAIL/no-golden rows where PCC is undefined -> null. Rounded to 4dp to keep
+        # the payload small; the matrix hover surfaces it.
+        pcc = None
+        if len(r) >= 8 and r[7].strip():
+            try:
+                pcc = round(float(r[7]), 4)
+            except ValueError:
+                pcc = None
+
         opi = intern(op, ops, oI)
         dti = intern(dt, dts, dI)
         lyi = intern(ly, lys, lI)
         memi = intern(mem, mems, mI)
         ri = intern(short, reasons, rI)
         si = S_IDX[status]
-        rows.append([opi, dti, lyi, memi, si, ri])
+        rows.append([opi, dti, lyi, memi, si, ri, pcc])
 
         status_counts[status] += 1
         if dt != "-":
