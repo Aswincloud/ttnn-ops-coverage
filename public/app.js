@@ -699,7 +699,8 @@ function renderChanges(){
   }
 
   if(sub) sub.textContent=`Changes from the ${chgDate(C.baseline)} run to ${chgDate(C.current)}.`;
-  if(label) label.textContent='Changes · vs '+chgDate(C.baseline);
+  // button stays just "Changes"; the baseline date lives in the modal subtitle.
+  if(label) label.textContent='Changes';
 
   // summary chips (zeros are dimmed so the row's shape stays stable)
   const order=['improved','regressed','new','removed','statusChange','shift'];

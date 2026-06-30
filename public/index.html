@@ -203,7 +203,11 @@ select.inp{cursor:pointer;appearance:none;background-image:url("data:image/svg+x
 .chg-meta b{color:var(--dim);font-weight:600}
 /* per-op groups */
 .chg-list{display:flex;flex-direction:column;gap:10px;max-height:54dvh;overflow-y:auto;margin:0 -4px;padding:0 4px}
-.chg-op{border:1px solid var(--border);border-radius:11px;background:linear-gradient(168deg,var(--card),var(--card-2));overflow:hidden}
+/* op cards must NOT shrink: .chg-list is a fixed-height flex column, so without
+   flex:none each card's flex-shrink:1 crushed it to a ~2px sliver (content
+   clipped by overflow:hidden) instead of letting the list scroll. flex:none =
+   natural height, cards overflow and the list scrolls as intended. */
+.chg-op{flex:none;border:1px solid var(--border);border-radius:11px;background:linear-gradient(168deg,var(--card),var(--card-2));overflow:hidden}
 .chg-op-h{display:flex;align-items:center;gap:9px;padding:9px 12px;border-bottom:1px solid var(--border)}
 .chg-op-h .nm{font-family:var(--mono);font-size:13px;font-weight:700;color:var(--text)}
 .chg-op-h .mini{display:flex;gap:5px;margin-left:auto;flex-wrap:wrap}
