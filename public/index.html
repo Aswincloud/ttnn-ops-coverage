@@ -464,6 +464,13 @@ footer a{color:var(--dim);text-decoration:none;border-bottom:1px dotted #3a4d6e}
   .tscroll{overflow-x:auto;-webkit-overflow-scrolling:touch;min-width:0}
   /* table keeps its natural column widths (legible) and scrolls within .tscroll */
   table{width:max-content;min-width:100%}
+  /* Don't sticky the leaderboard header on mobile. .tscroll needs overflow-x:auto
+     for the 743px table to scroll sideways, but that makes .tscroll the sticky
+     containing block — so a position:sticky <th> pins to .tscroll (which never
+     scrolls vertically) instead of the viewport, leaving the header floating in
+     the middle of the row list. A plain header that scrolls with the table is
+     correct here; true page-sticky + horizontal-scroll can't coexist in CSS. */
+  #tbl thead th{position:static;top:auto;box-shadow:inset 0 -1px 0 var(--border)}
 }
 @media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 :focus-visible{outline:2px solid var(--primary);outline-offset:2px;border-radius:4px}
