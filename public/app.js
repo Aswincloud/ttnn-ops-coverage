@@ -28,10 +28,16 @@ function showTip(html, e){
   moveTip(e);
 }
 function moveTip(e){
-  const pad=14, w=tip.offsetWidth, h=tip.offsetHeight;
+  const pad=14, m=8, w=tip.offsetWidth, h=tip.offsetHeight;
   let x=e.clientX+pad, y=e.clientY+pad;
-  if(x+w>innerWidth-8) x=e.clientX-w-pad;
-  if(y+h>innerHeight-8) y=e.clientY-h-pad;
+  // flip to the other side if it would overflow the far edge…
+  if(x+w>innerWidth-m) x=e.clientX-w-pad;
+  if(y+h>innerHeight-m) y=e.clientY-h-pad;
+  // …then hard-clamp to the viewport so it can never sit off-screen. On a narrow
+  // phone the flipped-left x often goes negative (tip wider than the tap point),
+  // which left the tooltip half off the left edge — clamp fixes that.
+  x=Math.max(m, Math.min(x, innerWidth-w-m));
+  y=Math.max(m, Math.min(y, innerHeight-h-m));
   tip.style.left=x+'px'; tip.style.top=y+'px';
 }
 function hideTip(){ tip.style.opacity='0'; }
