@@ -677,7 +677,11 @@ function chgSide(side){
   let tail='';
   if(side.pcc!=null) tail+=` <span class="num">pcc ${(+side.pcc).toFixed(3)}</span>`;
   if(side.ulp!=null) tail+=` <span class="num">ulp ${(+side.ulp).toFixed(side.ulp<10?2:0)}</span>`;
-  return `<span class="st" style="color:${m.c}">${m.short}</span>${tail}`;
+  // when this side carries a reason (an ERR's TT_FATAL text, or a fail verdict),
+  // mark the outcome word as hoverable and stash the full reason for the tooltip.
+  const hasR = !!side.r;
+  const attr = hasR ? ` class="st st-why" data-reason="${esc(side.r)}"` : ` class="st"`;
+  return `<span${attr} style="color:${m.c}">${m.short}</span>${tail}`;
 }
 
 function renderChanges(){
@@ -739,6 +743,17 @@ function renderChanges(){
     `<div class="chg-sum">${chips}</div>
      <div class="chg-meta"><b>${total}</b> config change${total===1?'':'s'} across <b>${C.byOp.length}</b> op${C.byOp.length===1?'':'s'} · baseline <b>${esc(chgDate(C.baseline))}</b></div>
      <div class="chg-list">${ops||'<div class="chg-empty">No differences from the previous run.</div>'}</div>`;
+
+  // hover the outcome word (ERR / PCC / …) to see the full reason — the
+  // TT_FATAL text for a crash, or the fail verdict for a PCC fail.
+  $$('#changesBody .st-why').forEach(el=>{
+    el.addEventListener('mousemove',e=>{
+      let r=el.dataset.reason||'';
+      if(r.length>300) r=r.slice(0,300)+'…';
+      showTip(`<div class="t-r">${r.replace(/</g,'&lt;')}</div>`,e);
+    });
+    el.addEventListener('mouseleave',hideTip);
+  });
 }
 
 (function changesModal(){

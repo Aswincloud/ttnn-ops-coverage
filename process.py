@@ -244,7 +244,10 @@ def parse_matrix(path):
             status, _ = classify(r[5], r[6].strip())
             pcc = _to_float(r[8])
             ulp = _to_float(r[9])
-            out[(r[0], r[1], r[2], r[3], r[4])] = {"s": status, "pcc": pcc, "ulp": ulp}
+            # keep the raw pcc_or_reason so the changes modal can show WHY a
+            # config flipped (the TT_FATAL text for an ERR, the fail verdict for
+            # a PCC fail). Only meaningful for non-PASS outcomes.
+            out[(r[0], r[1], r[2], r[3], r[4])] = {"s": status, "pcc": pcc, "ulp": ulp, "r": r[6].strip()}
     return out
 
 
@@ -311,7 +314,15 @@ def compute_changes():
         # cap stored items per op; still count everything in the summary
         if len(rec["items"]) < 20:
             def _side(x):
-                return None if x is None else {"s": x["s"], "pcc": x["pcc"], "ulp": x["ulp"]}
+                if x is None:
+                    return None
+                s = {"s": x["s"], "pcc": x["pcc"], "ulp": x["ulp"]}
+                # carry the reason only for non-PASS outcomes (an ERR's TT_FATAL
+                # text or a fail verdict) — that's what the hover explains. PASS
+                # rows carry no useful reason. Trim to keep the payload lean.
+                if x["s"] != "PASS" and x.get("r"):
+                    s["r"] = x["r"][:400]
+                return s
             rec["items"].append({"dt": dt, "ly": ly, "mem": mem, "bcast": bcast,
                                  "kind": kind, "from": _side(frm), "to": _side(to)})
 
