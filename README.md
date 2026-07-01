@@ -6,8 +6,8 @@ Built to deploy as a **Cloudflare Workers Static Assets** site. The entire front
 
 **Live:** https://ttnn-ops-coverage.aswincloud.com/
 
-<!-- Badges are live: process.py emits public/badges/*.json from ops.csv on every
-     build, and shields.io renders them via its endpoint API — so the numbers
+<!-- Badges are live: process.py emits public/badges/*.json from the source CSV on
+     every build, and shields.io renders them via its endpoint API — so the numbers
      below always reflect the current data, never a hand-typed snapshot. -->
 ![configs](https://img.shields.io/endpoint?url=https%3A%2F%2Fttnn-ops-coverage.aswincloud.com%2Fbadges%2Fconfigs.json) ![ops](https://img.shields.io/endpoint?url=https%3A%2F%2Fttnn-ops-coverage.aswincloud.com%2Fbadges%2Fops.json) ![pass rate](https://img.shields.io/endpoint?url=https%3A%2F%2Fttnn-ops-coverage.aswincloud.com%2Fbadges%2Fpassrate.json) ![pass](https://img.shields.io/endpoint?url=https%3A%2F%2Fttnn-ops-coverage.aswincloud.com%2Fbadges%2Fpass.json) ![pcc fail](https://img.shields.io/endpoint?url=https%3A%2F%2Fttnn-ops-coverage.aswincloud.com%2Fbadges%2Fpccfail.json) ![error](https://img.shields.io/endpoint?url=https%3A%2F%2Fttnn-ops-coverage.aswincloud.com%2Fbadges%2Ferror.json)
 
@@ -15,7 +15,7 @@ Built to deploy as a **Cloudflare Workers Static Assets** site. The entire front
 
 ## What it shows
 
-The source data (`ops.csv`) is produced by [`eltwise_support_probe.py`](PROBE.md) — a
+The source data (`eltwise_support_matrix.csv`) is produced by [`eltwise_support_probe.py`](PROBE.md) — a
 sweep over **every op × dtype × layout × memory × broadcast configuration** (8 dtypes ×
 2 layouts × 5 memory configs: interleaved `dram`/`l1` + sharded `height`/`width`/`block`;
 binary ops additionally tested with `scalar`/`row`/`col` **broadcasting**). For every
@@ -72,9 +72,9 @@ Keyboard: `/` focuses search · `Esc` clears search/solo or closes a modal.
 │   ├── app.js              #   chart/table renderer (no deps)
 │   └── data.js             #   generated — window.DASH payload (gitignored)
 ├── worker/index.js         # serves assets + POST /api/feedback → Resend
-├── ops.csv                 # source data (regenerate data.js from this)
+├── eltwise_support_matrix.csv # source data (regenerate data.js from this)
 ├── process.py              # CSV → public/data.js transformer + classifier + run diff
-├── eltwise_support_probe.py # the probe that GENERATES ops.csv (see PROBE.md)
+├── eltwise_support_probe.py # the probe that GENERATES the matrix CSV (see PROBE.md)
 ├── history/                # dated probe snapshots (--dated); power the "Changes" diff
 ├── PROBE.md                # how the probe sweep works / how to run it
 ├── scripts/                # CI validators (check_data.py, check_code.mjs)
@@ -85,8 +85,10 @@ Keyboard: `/` focuses search · `Esc` clears search/solo or closes a modal.
 ```
 
 `public/data.js` is a **build artifact** — it is *not* committed (gitignored). CI and
-Cloudflare regenerate it from `ops.csv` on every deploy (and you regenerate it locally with
-`python3 process.py`). **`ops.csv` is the single source of truth.**
+Cloudflare regenerate it from `eltwise_support_matrix.csv` on every deploy (and you regenerate
+it locally with `python3 process.py`). **`eltwise_support_matrix.csv` is the single source of
+truth** — it's the probe's native output, overwritten by each daily run (which also drops a
+dated copy in `history/`).
 
 ---
 
@@ -98,7 +100,7 @@ un-reconciling or accidentally-committed `data.js`):
 
 | Job | Checks |
 |-----|--------|
-| **data integrity** | `ops.csv` shape + columns, PCC numeric-or-empty, `process.py` rebuilds and `statusCounts` sum == `meta.total` == row count |
+| **data integrity** | `eltwise_support_matrix.csv` shape + columns, PCC numeric-or-empty, `process.py` rebuilds and `statusCounts` sum == `meta.total` == row count |
 | **code checks** | `node --check` on `app.js` + worker, boots `data.js` in a sandbox and reconciles, asserts `data.js` is not git-tracked |
 | **lint** | ESLint over the shipped JS |
 
@@ -118,7 +120,7 @@ npm run serve                 # http://localhost:8080  (binds 0.0.0.0)
 npx wrangler dev              # http://localhost:8787  (emulates the edge)
 ```
 
-Updating the data is just: replace `ops.csv` → run `python3 process.py` → refresh. No rebuild step for HTML/JS.
+Updating the data is just: replace `eltwise_support_matrix.csv` → run `python3 process.py` → refresh. No rebuild step for HTML/JS.
 
 ---
 
@@ -148,11 +150,12 @@ push to `main`, Cloudflare runs:
 
 | Step | Command |
 |------|---------|
-| Build   | `npm run build`  → `python3 process.py` rebuilds `public/data.js` from `ops.csv` |
+| Build   | `npm run build`  → `python3 process.py` rebuilds `public/data.js` from `eltwise_support_matrix.csv` |
 | Deploy  | `npx wrangler deploy` → ships `public/` to the edge |
 
-So **updating the dashboard is just**: replace `ops.csv`, commit, push → live in ~a minute.
-Because the build regenerates `data.js`, **`ops.csv` is the only file you ever need to touch.**
+So **updating the dashboard is just**: replace `eltwise_support_matrix.csv`, commit, push → live
+in ~a minute. Because the build regenerates `data.js`, **`eltwise_support_matrix.csv` is the only
+file you ever need to touch** — and the daily updater does exactly that.
 
 ---
 
@@ -160,7 +163,7 @@ Because the build regenerates `data.js`, **`ops.csv` is the only file you ever n
 
 `process.py` does all the heavy lifting:
 
-1. Parses `ops.csv` (RFC-correct CSV — failure reasons contain embedded commas/newlines from C++ backtraces).
+1. Parses `eltwise_support_matrix.csv` (RFC-correct CSV — failure reasons contain embedded commas/newlines from C++ backtraces).
 2. Classifies each row's `accepted` + `pcc_or_reason` into the 6-status taxonomy.
 3. Collapses verbose `TT_FATAL`/`TT_THROW` backtraces into `KIND file:line — message` signatures and groups them.
 4. Computes per-op, per-dtype, per-layout, per-memory aggregations and the ULP distribution.

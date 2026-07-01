@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
-"""Transform ops.csv into a compact data.js for the dashboard."""
+"""Transform eltwise_support_matrix.csv into a compact data.js for the dashboard."""
 import csv, re, json, os, glob, datetime
 from collections import defaultdict, Counter
 
-SRC = "ops.csv"
+# The probe's native output name (see PROBE.md). The daily updater overwrites
+# this file with each run and also drops a dated copy in history/, so the newest
+# history snapshot always equals SRC — which compute_changes() relies on.
+SRC = "eltwise_support_matrix.csv"
 OUT = "public/data.js"
 HISTORY_DIR = "history"          # dated probe snapshots written by --dated
 
@@ -214,7 +217,7 @@ ulp_dist = {
 }
 
 # --- run-to-run comparison ("what changed") --------------------------------
-# Diff the current matrix (ops.csv) against the previous dated snapshot in
+# Diff the current matrix (SRC) against the previous dated snapshot in
 # history/. Reuses classify() so both sides bucket identically.
 FAIL_STATES = {"PCC_FAIL", "ERROR", "NOT_IN_TTNN", "SKIP"}
 
@@ -274,7 +277,7 @@ def diff_kind(a, b):
 
 
 def compute_changes():
-    """Build the `changes` payload: current (ops.csv) vs the previous dated
+    """Build the `changes` payload: current (SRC) vs the previous dated
     snapshot. Returns baseline=None when there aren't two snapshots to compare."""
     dated = sorted(glob.glob(os.path.join(HISTORY_DIR, "eltwise_support_matrix_*.csv")),
                    key=_date_from)
@@ -283,7 +286,7 @@ def compute_changes():
             "byOp": []}
     if len(dated) < 2:
         return base
-    # newest dated file == current ops.csv; baseline is the previous run
+    # newest dated file == current SRC; baseline is the previous run
     base["current"] = _date_from(dated[-1]) or "current"
     base["baseline"] = _date_from(dated[-2]) or None
     try:
@@ -384,7 +387,7 @@ print(f"wrote {OUT}  ({os.path.getsize(OUT)/1024:.0f} KB)")
 
 # --- live README badges (derived 100% from the CSV, never hand-edited) -------
 # Shields "endpoint" JSON: the README points img.shields.io/endpoint?url=… at
-# these, so the badge numbers always reflect ops.csv. Written into public/ so
+# these, so the badge numbers always reflect the source CSV. Written into public/ so
 # they ship to the live domain; gitignored like data.js (a build artifact).
 def write_badges():
     badge_dir = os.path.join("public", "badges")

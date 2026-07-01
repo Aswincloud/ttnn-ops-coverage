@@ -21,7 +21,7 @@ permissions:
   contents: read
 
 jobs:
-  # ---- data integrity: ops.csv shape + process.py reconciles --------------
+  # ---- data integrity: source CSV shape + process.py reconciles -----------
   data:
     name: data integrity
     runs-on: ubuntu-latest
@@ -31,7 +31,7 @@ jobs:
         with:
           python-version: "3.12"
       # process.py is stdlib-only (csv/json/re) — no pip install needed.
-      - name: Validate ops.csv + data.js reconciliation
+      - name: Validate eltwise_support_matrix.csv + data.js reconciliation
         run: python3 scripts/check_data.py
 
   # ---- code: JS syntax + data.js boots + artifact not committed -----------

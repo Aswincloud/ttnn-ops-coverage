@@ -7,7 +7,7 @@
 //   2. data.js boots: requiring it populates window.DASH and the payload
 //      reconciles (statusCounts sum == meta.total == rows length).
 //   3. data.js is NOT tracked by git (it's a generated build artifact — must
-//      stay gitignored so ops.csv remains the single source of truth).
+//      stay gitignored so the source CSV remains the single source of truth).
 //
 // Runnable locally:  node scripts/check_code.mjs
 import { execFileSync } from "node:child_process";
@@ -64,13 +64,13 @@ try {
 }
 
 // --- 3: build artifacts must stay gitignored, never committed -------------
-// data.js + the README badge JSON are both generated from ops.csv on every
-// build. Committing either would let a stale snapshot drift from the CSV, so
-// `git ls-files` (TRACKED files) must list neither.
+// data.js + the README badge JSON are both generated from the source CSV on
+// every build. Committing either would let a stale snapshot drift from the CSV,
+// so `git ls-files` (TRACKED files) must list neither.
 try {
   const tracked = execFileSync("git", ["ls-files", "public/data.js", "public/badges"],
     { cwd: ROOT, stdio: "pipe" }).toString().trim();
-  if (tracked) fail(`generated build artifact(s) tracked by git — must stay gitignored (generated from ops.csv):\n     ${tracked.split("\n").join("\n     ")}`);
+  if (tracked) fail(`generated build artifact(s) tracked by git — must stay gitignored (generated from the source CSV):\n     ${tracked.split("\n").join("\n     ")}`);
   else ok("public/data.js + public/badges are not tracked (correctly gitignored)");
 } catch {
   // not a git repo (e.g. tarball CI) — skip rather than fail

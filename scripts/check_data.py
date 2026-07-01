@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """CI data-integrity gate for the TTNN Ops Coverage dashboard.
 
-Validates the single source of truth (ops.csv) and the generated payload
-(public/data.js) — the invariants we otherwise verify by hand on every push:
+Validates the single source of truth (eltwise_support_matrix.csv) and the
+generated payload (public/data.js) — the invariants we otherwise verify by hand
+on every push:
 
-  1. ops.csv RFC-parses; every row has the same column count as the header.
+  1. the CSV RFC-parses; every row has the same column count as the header.
   2. The `pcc` column (when present) is numeric-or-empty — never malformed.
   3. `python3 process.py` runs clean and writes public/data.js.
   4. window.DASH.statusCounts sums to meta.total == the parsed row count
@@ -21,7 +22,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-CSV = ROOT / "ops.csv"
+CSV = ROOT / "eltwise_support_matrix.csv"   # the probe's native output (see PROBE.md)
+CSV_NAME = CSV.name
 DATA_JS = ROOT / "public" / "data.js"
 
 
@@ -34,7 +36,7 @@ def ok(msg: str) -> None:
     print(f"ok    {msg}")
 
 
-# --- 1 + 2: ops.csv shape + pcc column ------------------------------------
+# --- 1 + 2: source-CSV shape + pcc column ---------------------------------
 def check_csv() -> int:
     if not CSV.exists():
         fail(f"{CSV} does not exist")
@@ -42,7 +44,7 @@ def check_csv() -> int:
         rd = csv.reader(f)
         header = next(rd, None)
         if not header:
-            fail("ops.csv is empty (no header)")
+            fail(f"{CSV_NAME} is empty (no header)")
         ncol = len(header)
         # Pin the exact schema. process.py reads several columns by INDEX, so a
         # silently-inserted/reordered column (e.g. the bcast column added at
@@ -51,7 +53,7 @@ def check_csv() -> int:
         EXPECTED = ["op", "dtype", "layout", "mem", "bcast",
                     "accepted", "pcc_or_reason", "input_range", "pcc", "ulp"]
         if header != EXPECTED:
-            fail(f"ops.csv header mismatch.\n     expected: {','.join(EXPECTED)}"
+            fail(f"{CSV_NAME} header mismatch.\n     expected: {','.join(EXPECTED)}"
                  f"\n     got:      {','.join(header)}")
         has_pcc = "pcc" in header
         pcc_i = header.index("pcc") if has_pcc else -1
@@ -59,7 +61,7 @@ def check_csv() -> int:
         bad_pcc = 0
         for n, r in enumerate(rd, start=2):  # line 2 = first data row
             if len(r) != ncol:
-                fail(f"ops.csv line {n}: {len(r)} columns, expected {ncol} "
+                fail(f"{CSV_NAME} line {n}: {len(r)} columns, expected {ncol} "
                      f"(header: {','.join(header)})")
             rows += 1
             if has_pcc:
@@ -72,8 +74,8 @@ def check_csv() -> int:
                         if bad_pcc <= 3:
                             print(f"      line {n}: non-numeric pcc {v!r}")
         if bad_pcc:
-            fail(f"ops.csv has {bad_pcc} malformed pcc value(s)")
-    ok(f"ops.csv: {rows} rows, {ncol} columns, consistent"
+            fail(f"{CSV_NAME} has {bad_pcc} malformed pcc value(s)")
+    ok(f"{CSV_NAME}: {rows} rows, {ncol} columns, consistent"
        + (", pcc numeric-or-empty" if has_pcc else " (no pcc column)"))
     return rows
 
@@ -114,11 +116,11 @@ def check_payload(csv_rows: int) -> None:
     if ssum != total:
         fail(f"data.js: statusCounts sum {ssum} != meta.total {total}")
     if total != csv_rows:
-        fail(f"data.js: meta.total {total} != ops.csv row count {csv_rows}")
+        fail(f"data.js: meta.total {total} != {CSV_NAME} row count {csv_rows}")
 
     nrows = len(dash.get("rows", []))
     if nrows != csv_rows:
-        fail(f"data.js: rows[] length {nrows} != ops.csv row count {csv_rows}")
+        fail(f"data.js: rows[] length {nrows} != {CSV_NAME} row count {csv_rows}")
 
     ok(f"data.js reconciles: statusCounts sum == meta.total == rows == "
        f"{csv_rows}  {sc}")
