@@ -471,6 +471,21 @@ footer a{color:var(--dim);text-decoration:none;border-bottom:1px dotted #3a4d6e}
      the middle of the row list. A plain header that scrolls with the table is
      correct here; true page-sticky + horizontal-scroll can't coexist in CSS. */
   #tbl thead th{position:static;top:auto;box-shadow:inset 0 -1px 0 var(--border)}
+
+  /* Changes modal: the config|outcome 2-col grid squeezes the config label to
+     ~28px on a phone, so it renders as "uin…" and you can't tell which config a
+     row is. Stack them — config on its own line, the outcome move below — so both
+     get the full width. */
+  .chg-row{grid-template-columns:1fr;gap:3px}
+  .chg-row .cfg{white-space:normal;overflow:visible;text-overflow:clip}
+  .chg-row .mv{justify-self:start;flex-wrap:wrap}
+
+  /* Bigger touch targets on phones (toward the ~44px guideline). These are
+     comfortably tappable at desktop's compact size but cramped on a finger. */
+  .ulp-chip,.mtx-bchip{min-height:36px;display:inline-flex;align-items:center}
+  .chip{min-height:36px}
+  .suggest-btn{min-height:40px}
+  .xlink{min-height:40px}
 }
 @media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 :focus-visible{outline:2px solid var(--primary);outline-offset:2px;border-radius:4px}
