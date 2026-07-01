@@ -1,7 +1,24 @@
 /* TTNN Ops Dashboard — self-contained renderer (no deps) */
 (function(){
 "use strict";
+// Data-load failsafe: public/data.js is a separate <script> built at deploy time.
+// If it fails to load (network hiccup, cache miss, build gap) window.DASH is
+// undefined — without this guard the very next line throws and the page renders
+// blank with only a console error. Instead, show a readable message + reload.
 const D = window.DASH;
+if(!D || !D.statusCounts || !D.rows){
+  const host = document.querySelector('.wrap') || document.body;
+  if(host) host.innerHTML =
+    '<div role="alert" style="max-width:32rem;margin:18vh auto;padding:28px 30px;'
+    +'text-align:center;font-family:\'Fira Sans\',system-ui,sans-serif;color:#e2e8f0">'
+    +'<div style="font-size:15px;font-weight:600;margin-bottom:8px">Data didn’t load</div>'
+    +'<div style="font-size:13px;line-height:1.6;color:#94a3b8">The coverage dataset '
+    +'couldn’t be fetched. This is usually a transient network or cache issue.</div>'
+    +'<button onclick="location.reload(true)" style="margin-top:18px;min-height:40px;'
+    +'padding:0 18px;border-radius:8px;border:1px solid #334155;background:#1e293b;'
+    +'color:#e2e8f0;font:inherit;font-size:13px;cursor:pointer">Reload</button></div>';
+  return;
+}
 const $ = (s,p=document)=>p.querySelector(s);
 const $$ = (s,p=document)=>[...p.querySelectorAll(s)];
 const fmt = n => n.toLocaleString('en-US');
@@ -41,6 +58,32 @@ function moveTip(e){
   tip.style.left=x+'px'; tip.style.top=y+'px';
 }
 function hideTip(){ tip.style.opacity='0'; }
+// Touch support: mouse-only tooltips (mousemove/mouseleave) don't work on a
+// phone — a tap may not fire mousemove, and there's no mouseleave to dismiss, so
+// tips can fail to show or get stuck. bindTip wires BOTH: hover for mouse, tap
+// for touch. On touch, the tap shows the tip (positioned at the touch point, via
+// the same clamped moveTip) and a one-shot document touch/scroll dismisses it.
+let tipDismiss=null;
+function bindTip(el, htmlFn){
+  // mouse path (unchanged behaviour)
+  el.addEventListener('mousemove', e=>showTip(htmlFn(el), e));
+  el.addEventListener('mouseleave', hideTip);
+  // touch path
+  el.addEventListener('touchstart', e=>{
+    const t=e.touches[0]; if(!t) return;
+    e.stopPropagation();                 // don't let the doc-level dismiss fire
+    showTip(htmlFn(el), {clientX:t.clientX, clientY:t.clientY});
+    // arm a one-shot dismiss on the next tap-elsewhere or scroll
+    if(tipDismiss) tipDismiss();
+    // dismiss on the next tap-elsewhere or a PAGE scroll. Listen to window scroll
+    // (non-capture) — NOT capture — so an inner scroller (e.g. the horizontally
+    // scrollable matrix the cell lives in) emitting a scroll on tap doesn't
+    // instantly dismiss the tip we just opened; only a real page scroll does.
+    const off=()=>{ hideTip(); document.removeEventListener('touchstart',off); removeEventListener('scroll',off); tipDismiss=null; };
+    tipDismiss=off;
+    setTimeout(()=>{ document.addEventListener('touchstart',off); addEventListener('scroll',off,{passive:true}); },0);
+  }, {passive:true});
+}
 function tipHead(status, txt){
   const m=SMETA[status];
   return `<div class="t-h"><span class="sw" style="background:${m.c}"></span>${txt||m.label}</div>`;
@@ -231,12 +274,11 @@ function renderDims(){
       ? `<div style="height:14px"></div>`+
         dimBlock('Broadcast','none vs scalar / row / col (binary ops)', D.dims.bcast)
       : '');
-  $$('#dims .sbar i').forEach(seg=>{
-    const s=seg.dataset.s;
-    seg.addEventListener('mousemove',e=>showTip(
-      tipHead(s)+`<div class="t-r"><b>${seg.dataset.dim}</b> · ${SMETA[s].label}<br><b>${fmt(+seg.dataset.v)}</b> of ${fmt(+seg.dataset.tot)} · <b>${pct(+seg.dataset.v,+seg.dataset.tot).toFixed(1)}%</b></div>`,e));
-    seg.addEventListener('mouseleave',hideTip);
-  });
+  // informational-only segments (no click action) → mouse + touch, like matrix cells
+  $$('#dims .sbar i').forEach(seg=> bindTip(seg, el=>{
+    const s=el.dataset.s;
+    return tipHead(s)+`<div class="t-r"><b>${el.dataset.dim}</b> · ${SMETA[s].label}<br><b>${fmt(+el.dataset.v)}</b> of ${fmt(+el.dataset.tot)} · <b>${pct(+el.dataset.v,+el.dataset.tot).toFixed(1)}%</b></div>`;
+  }));
 }
 
 /* =========================================================
@@ -487,11 +529,8 @@ function renderTable(){
       swapDetail(op);
     });
   });
-  // composition bar tooltips
-  $$('#tbody .cellbar .track i').forEach(i=>{
-    i.addEventListener('mousemove',e=>showTip(`<div class="t-r">${i.title}</div>`,e));
-    i.addEventListener('mouseleave',hideTip);
-  });
+  // composition bar tooltips (mouse + touch)
+  $$('#tbody .cellbar .track i').forEach(i=> bindTip(i, el=>`<div class="t-r">${el.title}</div>`));
   bindMatrix();
 }
 // Replace one op's expanded detail row in place (mode switch) and rebind only
@@ -638,26 +677,24 @@ function bcastLine(raw){
   if(!raw) return '';
   return `<div class="t-in">broadcast <b>${raw}</b></div>`;
 }
+function cellTipHtml(c){
+  const s=c.dataset.status, m=SMETA[s];
+  let reason=c.dataset.reason||'';
+  if(reason.length>240) reason=reason.slice(0,240)+'…';
+  return tipHead(s)+
+    `<div class="t-r"><b>${c.dataset.dt}</b> · ${c.dataset.cfg}<br>`+
+    (reason?reason.replace(/</g,'&lt;'):m.label)+`</div>`+
+    bcastLine(c.dataset.bcast)+
+    inputsLine(c.dataset.inputs)+
+    pccLine(c.dataset.pcc, c.dataset.dt, s)+
+    ulpLine(c.dataset.ulp);
+}
 function bindMatrix(root){
-  // bind cell tooltips; scope to `root` (one detail row) when given so a single
-  // mode-swap doesn't re-bind every other open matrix, else the whole #tbody.
+  // bind cell tooltips (mouse + touch); scope to `root` (one detail row) when
+  // given so a single mode-swap doesn't re-bind every other open matrix.
   const scope = root || document.querySelector('#tbody');
   if(!scope) return;
-  scope.querySelectorAll('.cell:not(.c-empty)').forEach(c=>{
-    c.addEventListener('mousemove',e=>{
-      const s=c.dataset.status, m=SMETA[s];
-      let reason=c.dataset.reason||'';
-      if(reason.length>240) reason=reason.slice(0,240)+'…';
-      showTip(tipHead(s)+
-        `<div class="t-r"><b>${c.dataset.dt}</b> · ${c.dataset.cfg}<br>`+
-        (reason?reason.replace(/</g,'&lt;'):m.label)+`</div>`+
-        bcastLine(c.dataset.bcast)+
-        inputsLine(c.dataset.inputs)+
-        pccLine(c.dataset.pcc, c.dataset.dt, s)+
-        ulpLine(c.dataset.ulp),e);
-    });
-    c.addEventListener('mouseleave',hideTip);
-  });
+  scope.querySelectorAll('.cell:not(.c-empty)').forEach(c=> bindTip(c, cellTipHtml));
 }
 
 /* ---- search ---- */
@@ -766,16 +803,13 @@ function renderChanges(){
      <div class="chg-meta"><b>${total}</b> config change${total===1?'':'s'} across <b>${C.byOp.length}</b> op${C.byOp.length===1?'':'s'} · baseline <b>${esc(chgDate(C.baseline))}</b></div>
      <div class="chg-list">${ops||'<div class="chg-empty">No differences from the previous run.</div>'}</div>`;
 
-  // hover the outcome word (ERR / PCC / …) to see the full reason — the
+  // hover (or tap) the outcome word (ERR / PCC / …) to see the full reason — the
   // TT_FATAL text for a crash, or the fail verdict for a PCC fail.
-  $$('#changesBody .st-why').forEach(el=>{
-    el.addEventListener('mousemove',e=>{
-      let r=el.dataset.reason||'';
-      if(r.length>300) r=r.slice(0,300)+'…';
-      showTip(`<div class="t-r">${r.replace(/</g,'&lt;')}</div>`,e);
-    });
-    el.addEventListener('mouseleave',hideTip);
-  });
+  $$('#changesBody .st-why').forEach(el=> bindTip(el, x=>{
+    let r=x.dataset.reason||'';
+    if(r.length>300) r=r.slice(0,300)+'…';
+    return `<div class="t-r">${r.replace(/</g,'&lt;')}</div>`;
+  }));
 }
 
 (function changesModal(){
