@@ -448,8 +448,24 @@ function renderTable(){
   $$('#tbody tr.op-row').forEach(tr=>{
     tr.addEventListener('click',()=>{
       const op=tr.dataset.op;
-      if(state.open.has(op)) state.open.delete(op); else state.open.add(op);
+      const opening = !state.open.has(op);
+      if(opening) state.open.add(op); else state.open.delete(op);
       renderTable();
+      // On open, pull the fresh matrix into view so its title + column-header
+      // row sit below the sticky page header (scroll-margin-top handles the
+      // offset) — otherwise a tall matrix can open with its header hidden
+      // behind the header bar, which reads as "header stuck in the middle".
+      if(opening){
+        const row=$$('#tbody tr.op-row').find(r=>r.dataset.op===op);
+        const det=row&&row.nextElementSibling;
+        if(det&&det.classList.contains('detail')){
+          const headH=parseInt(getComputedStyle(document.documentElement).getPropertyValue('--head-h'))||84;
+          // only scroll if the detail's top is above the clear zone (hidden/tucked)
+          if(det.getBoundingClientRect().top < headH+12){
+            det.scrollIntoView({behavior:'smooth',block:'start'});
+          }
+        }
+      }
     });
   });
   // inline broadcast toggle inside an expanded matrix. Swap that op's mode and

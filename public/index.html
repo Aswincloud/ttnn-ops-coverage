@@ -383,6 +383,10 @@ tr.op-row.open .opname .tw{transform:rotate(90deg);color:var(--primary-hi)}
 .b-pcc{color:#fcd34d;background:var(--pcc-d)}
 
 /* drill-down matrix */
+/* When an op expands we scrollIntoView its detail row; scroll-margin-top keeps
+   the matrix title + column-header row clear of the sticky page header (tall on
+   mobile, ~204px) instead of tucking them underneath it. */
+tr.detail{scroll-margin-top:calc(var(--head-h,84px) + 10px)}
 tr.detail td{padding:0;border-bottom:1px solid var(--border)}
 .detail-inner{padding:16px 18px 20px;background:#0b1322;animation:slidein 260ms cubic-bezier(.4,0,.2,1)}
 @keyframes slidein{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
