@@ -819,9 +819,19 @@ function enterFocus(op){
   view = computeFocus(op);
   const sc=view.statusCounts, verif=sc.PASS+sc.PCC_FAIL, pr=verif?pct(sc.PASS,verif):0;
   focusBar.classList.add('on');
+  // The leaderboard isn't reset — the search term that selected this op still
+  // filters it, so it lists the matching family (e.g. focusing "div" leaves
+  // div / div_bw / divide … below). Word the banner to match that, with the live
+  // match count. Fall back to "all ops" if the box was somehow cleared.
+  const q=state.q.trim();
+  const shown=q ? D.opLeaderboard.filter(o=>o.op.toLowerCase().includes(q.toLowerCase())).length : D.opLeaderboard.length;
+  const tail = !q
+    ? `The leaderboard below still lists all ops.`
+    : shown===1
+      ? `The leaderboard below shows just this op.`
+      : `The leaderboard below lists the ${shown} ops matching “${esc(q)}”.`;
   focusBarTxt.innerHTML=`Showing every chart for <b>${esc(op)}</b> only — `+
-    `${fmt(view.meta.total)} configs, ${pr.toFixed(0)}% verifiable pass rate. `+
-    `The leaderboard below still lists all ops.`;
+    `${fmt(view.meta.total)} configs, ${pr.toFixed(0)}% verifiable pass rate. `+tail;
   focusChip.classList.add('on'); focusChipName.textContent=op;
   closeAC();
   renderViews();
