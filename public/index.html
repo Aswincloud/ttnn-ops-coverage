@@ -112,6 +112,9 @@ header.top{
 .focus-bar .fb-ico svg{width:17px;height:17px}
 .focus-bar .fb-txt{flex:1;min-width:0;font-size:13px;color:var(--dim)}
 .focus-bar .fb-txt b{color:var(--text);font-family:var(--mono)}
+/* inline pattern code in the banner + leaderboard sub-line */
+.focus-bar .fb-txt code,#tableSub code{font-family:var(--mono);font-size:.9em;color:var(--text);
+  background:var(--card-2);border:1px solid var(--border);border-radius:5px;padding:1px 5px}
 .focus-bar .fb-clear{flex:none;min-height:34px;padding:0 14px;border-radius:8px;
   border:1px solid var(--border);background:var(--card-2);color:var(--dim);
   font:inherit;font-size:12.5px;cursor:pointer}
@@ -581,8 +584,8 @@ footer a{color:var(--dim);text-decoration:none;border-bottom:1px dotted #3a4d6e}
     </div>
     <div class="searchbox">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
-      <input id="search" type="search" placeholder="search an op to focus…  (e.g. add, _bw, prod)" autocomplete="off"
-             role="combobox" aria-expanded="false" aria-controls="opList" aria-autocomplete="list" aria-label="Search an operation to focus the page on">
+      <input id="search" type="search" placeholder="search an op to focus…  (regex: ^add, _bw$, div|mul)" autocomplete="off"
+             role="combobox" aria-expanded="false" aria-controls="opList" aria-autocomplete="list" aria-label="Search operations by name or regular expression to focus the page on">
       <div class="op-list" id="opList" role="listbox" aria-label="Matching operations" hidden></div>
     </div>
   </header>

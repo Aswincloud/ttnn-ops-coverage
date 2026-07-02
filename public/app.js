@@ -551,10 +551,39 @@ function badge(v, kind){
   return `<span class="badge ${cls}">${v}</span>`;
 }
 
+// Build a matcher for the op-name filter. The query is treated as a REGEX
+// (case-insensitive) so you can do ^div, _bw$, div|mul, etc. A plain string like
+// "div" is itself a valid regex that matches as a substring, so this is fully
+// backward-compatible. If the pattern is invalid or half-typed (e.g. "div(" as
+// you type), we fall back to a plain substring match rather than error out /
+// show zero results. Returns {test(op)->bool, rank(op)->0|1, ok:bool}.
+// rank: 0 for a match starting at position 0 (prefix-ish), 1 otherwise — this
+// reproduces the old "prefix first" dropdown ordering for plain strings and
+// still does something sensible for real patterns.
+function opMatcher(q){
+  const s=(q||'').trim();
+  if(!s) return {test:()=>true, rank:()=>0, ok:true};
+  let re=null;
+  try{ re=new RegExp(s,'i'); }catch{ re=null; }
+  if(re){
+    return {
+      test:op=>re.test(op),
+      rank:op=>{ const m=op.match(re); return m && m.index===0 ? 0 : 1; },
+      ok:true,
+    };
+  }
+  const ls=s.toLowerCase();                       // invalid regex → substring fallback
+  return {
+    test:op=>op.toLowerCase().includes(ls),
+    rank:op=>op.toLowerCase().startsWith(ls)?0:1,
+    ok:true,
+  };
+}
+
 function filteredRows(){
   let rows=D.opLeaderboard.slice();
-  const q=state.q.trim().toLowerCase();
-  if(q) rows=rows.filter(o=>o.op.toLowerCase().includes(q));
+  const m=opMatcher(state.q);
+  if(state.q.trim()) rows=rows.filter(o=>m.test(o.op));
   if(state.solo) rows=rows.filter(o=>o[state.solo]>0);
   const k=state.sort, dir=state.dir;
   rows.sort((a,b)=>{
@@ -570,7 +599,7 @@ function renderTable(){
   const rows=filteredRows();
   $('#tableSub').innerHTML = `${rows.length} op${rows.length===1?'':'s'} shown` +
     (state.solo?` · soloing <b style="color:${SMETA[state.solo].c}">${SMETA[state.solo].label}</b>`:'') +
-    (state.q?` · matching “${state.q}”`:'');
+    (state.q.trim()?` · matching <code>${esc(state.q.trim())}</code>`:'');
   const tb=$('#tbody');
   if(!rows.length){ tb.innerHTML=''; $('#emptyState').hidden=false; return; }
   $('#emptyState').hidden=true;
@@ -819,18 +848,19 @@ function enterFocus(op){
   view = computeFocus(op);
   const sc=view.statusCounts, verif=sc.PASS+sc.PCC_FAIL, pr=verif?pct(sc.PASS,verif):0;
   focusBar.classList.add('on');
-  // The leaderboard isn't reset — the search term that selected this op still
-  // filters it, so it lists the matching family (e.g. focusing "div" leaves
-  // div / div_bw / divide … below). Word the banner to match that, with the live
-  // match count. Fall back to "all ops" if the box was somehow cleared.
+  // The leaderboard isn't reset — the search pattern that selected this op still
+  // filters it (as a regex), so it lists every op matching the pattern (e.g.
+  // focusing "div" leaves div / div_bw / divide … below). Word the banner to
+  // match that, with the live count. "all ops" if the box was cleared.
   const q=state.q.trim();
-  const shown=q ? D.opLeaderboard.filter(o=>o.op.toLowerCase().includes(q.toLowerCase())).length : D.opLeaderboard.length;
+  const m=opMatcher(q);
+  const shown=q ? D.opLeaderboard.filter(o=>m.test(o.op)).length : D.opLeaderboard.length;
   const tail = !q
     ? `The leaderboard below still lists all ops.`
     : shown===1
       ? `The leaderboard below shows just this op.`
-      : `The leaderboard below lists the ${shown} ops matching “${esc(q)}”.`;
-  focusBarTxt.innerHTML=`Showing every chart for <b>${esc(op)}</b> only — `+
+      : `The leaderboard below lists all ${shown} ops matching the pattern <code>${esc(q)}</code>.`;
+  focusBarTxt.innerHTML=`The charts above are scoped to <b>${esc(op)}</b> only — `+
     `${fmt(view.meta.total)} configs, ${pr.toFixed(0)}% verifiable pass rate. `+tail;
   focusChip.classList.add('on'); focusChipName.textContent=op;
   closeAC();
@@ -849,12 +879,13 @@ function exitFocus(){
 /* ---- op autocomplete ---- */
 function closeAC(){ opListEl.hidden=true; searchEl.setAttribute('aria-expanded','false'); acIndex=-1; acItems=[]; }
 function openAC(q){
-  const ql=q.trim().toLowerCase();
-  // rank: prefix matches first, then substring; each carries its pass-rate for a cue
+  // same regex-aware matcher the leaderboard uses, so the dropdown and the table
+  // always agree on what "matches".
+  const m=opMatcher(q);
   const byOp={}; D.opLeaderboard.forEach(o=>byOp[o.op]=o);
-  const matches=D.ops.filter(op=>!ql||op.toLowerCase().includes(ql))
+  const matches=D.ops.filter(op=>m.test(op))
     .sort((a,b)=>{
-      if(ql){ const pa=a.toLowerCase().startsWith(ql), pb=b.toLowerCase().startsWith(ql); if(pa!==pb) return pa?-1:1; }
+      const ra=m.rank(a), rb=m.rank(b); if(ra!==rb) return ra-rb;   // prefix-ish first
       return a.localeCompare(b);
     }).slice(0,60);
   acItems=matches;
