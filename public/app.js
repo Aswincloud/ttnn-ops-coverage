@@ -38,6 +38,82 @@ const SMETA = {
 const ALL_ORDER = ['PASS','PCC_FAIL','ERROR','NO_GOLDEN','SKIP','NOT_IN_TTNN'];
 const ORDER = ALL_ORDER.filter(s => (D.statusCounts[s]||0) > 0);
 
+/* =========================================================
+   FOCUS VIEW — re-scope the whole page to a single op
+   --------------------------------------------------------
+   Every analytics panel reads its numbers from build-time aggregates baked into
+   `D` (statusCounts / dims / ulpDist / errFamilies) computed by process.py over
+   ALL rows. To show the page "for one op only" we rebuild those same aggregates
+   client-side from the raw compact rows (already in the payload) filtered to that
+   op, matching process.py's logic exactly, and hand panels a `view` that has the
+   identical shape. Default `view` === the global `D`. Verified: re-bucketing the
+   payload's ULP reproduces D.ulpDist bucket-for-bucket, so nothing drifts.
+   Compact row = [opIdx,dtIdx,lyIdx,memIdx,statusIdx,reasonIdx,pcc,ulp,inputIdx,bcastIdx]
+========================================================= */
+const ULP_EDGES=[0,1,2,4,8,16,32,64,128,256,1024,Infinity];   // mirrors process.py
+function ulpBucket(x){                                          // → index in ulpDist.labels
+  if(x<=0) return 0;
+  for(let i=1;i<ULP_EDGES.length-1;i++){ if(x<=ULP_EDGES[i]) return i; }
+  return ULP_EDGES.length-1;
+}
+function errSig(reason){                                        // mirrors err_signature()
+  if(!reason) return reason||'';
+  if(!/^(TT_FATAL|TT_THROW)/.test(reason)) return reason;
+  const m=reason.match(/^(TT_(?:FATAL|THROW) [\w.]+:\d+)/);
+  return m?m[1]:reason;
+}
+// Build a D-shaped aggregate over just this op's rows (or all rows if op is null).
+function computeFocus(op){
+  const opi = op==null ? -1 : D.ops.indexOf(op);
+  const sc={PASS:0,PCC_FAIL:0,NO_GOLDEN:0,SKIP:0,ERROR:0,NOT_IN_TTNN:0};
+  const dim={dtype:{},layout:{},mem:{},bcast:{}};
+  const ulpOverall=new Array(D.ulpDist.labels.length).fill(0);
+  const ulpByDt={};
+  const errFam=new Map();                                       // sig -> {count, sample}
+  let total=0;
+  const bump=(store,key,st)=>{
+    if(key==='-'||key==null) return;
+    (store[key]||(store[key]={value:key,PASS:0,PCC_FAIL:0,NO_GOLDEN:0,SKIP:0,ERROR:0,NOT_IN_TTNN:0,total:0}));
+    store[key][st]++; store[key].total++;
+  };
+  for(const r of D.rows){
+    if(opi>=0 && r[0]!==opi) continue;
+    total++;
+    const st=D.statusList[r[4]], dt=D.dts[r[1]], ly=D.lys[r[2]], mem=D.mems[r[3]], bc=D.bcasts[r[9]];
+    sc[st]++;
+    bump(dim.dtype,dt,st); bump(dim.layout,ly,st); bump(dim.mem,mem,st); bump(dim.bcast,bc,st);
+    if(r[7]!=null){                                             // has a ULP → float row w/ golden
+      const bi=ulpBucket(r[7]);
+      ulpOverall[bi]++;
+      (ulpByDt[dt]||(ulpByDt[dt]=new Array(ulpOverall.length).fill(0)))[bi]++;
+    }
+    if(st==='ERROR'){
+      const sig=errSig(D.reasons[r[5]]||'');
+      const e=errFam.get(sig)||{count:0,sample:D.reasons[r[5]]||''};
+      e.count++; errFam.set(sig,e);
+    }
+  }
+  // shape dims exactly like dim_obj(): array sorted by -total
+  const dimArr=o=>Object.values(o).sort((a,b)=>b.total-a.total);
+  const ulpTotal=ulpOverall.reduce((a,b)=>a+b,0);
+  const byDtype={};
+  Object.keys(ulpByDt).forEach(d=>{ byDtype[d]=ulpByDt[d]; });
+  const errFamilies=[...errFam.entries()]
+    .map(([sig,e])=>({sig,count:e.count,sample:e.sample}))
+    .sort((a,b)=>b.count-a.count).slice(0,14);
+  return {
+    op,                                                         // null = global
+    meta:{...D.meta, total},
+    statusCounts:sc,
+    dims:{dtype:dimArr(dim.dtype),layout:dimArr(dim.layout),mem:dimArr(dim.mem),bcast:dimArr(dim.bcast)},
+    ulpDist:{labels:D.ulpDist.labels, overall:ulpOverall, total:ulpTotal, byDtype},
+    errFamilies,
+  };
+}
+// Active view every panel reads from. Default: the global dataset (op:null).
+let view = { op:null, meta:D.meta, statusCounts:D.statusCounts, dims:D.dims,
+             ulpDist:D.ulpDist, errFamilies:D.errFamilies };
+
 /* ---- tooltip ---- */
 const tip = $('#tip');
 function showTip(html, e){
@@ -93,12 +169,15 @@ function tipHead(status, txt){
    META + KPIs
 ========================================================= */
 function renderMeta(){
-  const m=D.meta, sc=D.statusCounts;
-  $('#meta').innerHTML =
-    `<b>${fmt(m.total)}</b> configs`+
-    `<span class="dotsep"></span><b>${m.ops}</b> ops`+
-    `<span class="dotsep"></span>${m.dtypes.length} dtypes × ${m.layouts.length} layouts × ${m.mems.length} mem`;
-  $('#footMeta').textContent = `${fmt(m.total)} configurations across ${m.ops} operations · data refreshed ${m.generated}`;
+  const m=view.meta, sc=view.statusCounts, fo=view.op;   // fo = focused op (or null)
+  $('#meta').innerHTML = fo
+    ? `focused on <b>${esc(fo)}</b><span class="dotsep"></span><b>${fmt(m.total)}</b> configs`+
+      `<span class="dotsep"></span>${m.dtypes.length} dtypes × ${m.layouts.length} layouts × ${m.mems.length} mem`
+    : `<b>${fmt(m.total)}</b> configs`+
+      `<span class="dotsep"></span><b>${m.ops}</b> ops`+
+      `<span class="dotsep"></span>${m.dtypes.length} dtypes × ${m.layouts.length} layouts × ${m.mems.length} mem`;
+  // footer always reflects the full dataset (it's a provenance line, not a view)
+  $('#footMeta').textContent = `${fmt(D.meta.total)} configurations across ${D.meta.ops} operations · data refreshed ${D.meta.generated}`;
 
   const runnable = m.total - sc.SKIP - sc.NOT_IN_TTNN;
   const verifiable = sc.PASS + sc.PCC_FAIL;       // had a golden ref to compare
@@ -112,8 +191,8 @@ function renderMeta(){
       meta:'ran but inaccurate', color:'#f59e0b'},
     {cls:'k-nogold',lab:'No Golden', ico:'eye', val:fmt(sc.NO_GOLDEN),
       meta:'unverifiable output', color:'#38bdf8', skipIfZero:sc.NO_GOLDEN},
-    {cls:'k-ops',   lab:'Operations', ico:'grid', val:fmt(m.ops),
-      meta:`${fmt(runnable)} runnable configs`, color:'#3b82f6'},
+    {cls:'k-ops',   lab: fo?'Operation':'Operations', ico:'grid', val: fo?esc(fo):fmt(m.ops),
+      valCls: fo?'val-op':'', meta:`${fmt(runnable)} runnable configs`, color:'#3b82f6'},
     {cls:'k-total', lab:'Total Configs', ico:'layers', val:fmt(m.total),
       meta:`${m.dtypes.length}×${m.layouts.length}×${m.mems.length} sweep`, color:'#a78bfa'},
   ];
@@ -138,7 +217,7 @@ function renderMeta(){
   kpis.innerHTML = shown.map(c=>`
     <div class="kpi ${c.cls}" style="--accent-2:${c.color}">
       <div class="lab"><svg viewBox="0 0 24 24" fill="none" stroke="${c.color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICO[c.ico]}</svg>${c.lab}</div>
-      <div class="val" style="color:${c.color==='#a78bfa'||c.color==='#3b82f6'?'var(--text)':c.color}">${c.val}</div>
+      <div class="val ${c.valCls||''}" title="${c.valCls?esc(c.val):''}" style="color:${c.color==='#a78bfa'||c.color==='#3b82f6'?'var(--text)':c.color}">${c.val}</div>
       <div class="meta">${c.meta}</div>
     </div>`).join('');
 }
@@ -190,7 +269,7 @@ function arc(cx,cy,r,a0,a1){
   return `M ${x0} ${y0} A ${r} ${r} 0 ${large} 1 ${x1} ${y1}`;
 }
 function renderDonut(){
-  const sc=D.statusCounts, total=D.meta.total;
+  const sc=view.statusCounts, total=view.meta.total;
   $('#donutTotal').textContent=fmt(total);
   const size=190, cx=size/2, cy=size/2, r=72, sw=24;
   let a=-Math.PI/2; const gap=0.018;
@@ -263,16 +342,17 @@ function dimBlock(title, sub, arr){
   return html;
 }
 function renderDims(){
+  const dims=view.dims;
   const c=$('#dims'); c.style.gridTemplateColumns='1fr';
   c.innerHTML =
-    dimBlock('Data Type','pass-rate of verifiable configs per dtype', D.dims.dtype)+
+    dimBlock('Data Type','pass-rate of verifiable configs per dtype', dims.dtype)+
     `<div style="height:14px"></div>`+
-    dimBlock('Tensor Layout','tile vs row-major', D.dims.layout)+
+    dimBlock('Tensor Layout','tile vs row-major', dims.layout)+
     `<div style="height:14px"></div>`+
-    dimBlock('Memory','dram vs l1', D.dims.mem)+
-    (D.dims.bcast && D.dims.bcast.length
+    dimBlock('Memory','dram vs l1', dims.mem)+
+    (dims.bcast && dims.bcast.length
       ? `<div style="height:14px"></div>`+
-        dimBlock('Broadcast','none vs scalar / row / col (binary ops)', D.dims.bcast)
+        dimBlock('Broadcast','none vs scalar / row / col (binary ops)', dims.bcast)
       : '');
   // informational-only segments (no click action) → mouse + touch, like matrix cells
   $$('#dims .sbar i').forEach(seg=> bindTip(seg, el=>{
@@ -285,8 +365,15 @@ function renderDims(){
    ERROR FAMILIES
 ========================================================= */
 function renderErr(){
-  const fams=D.errFamilies, max=fams[0]?fams[0].count:1;
-  $('#errTotal').textContent=fmt(D.statusCounts.ERROR);
+  const fams=view.errFamilies, max=fams[0]?fams[0].count:1;
+  $('#errTotal').textContent=fmt(view.statusCounts.ERROR);
+  if(!fams.length){                                   // focused op with no hard errors
+    $('#efam').innerHTML=`<div class="chg-empty" style="grid-column:1/-1">`+
+      `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>`+
+      `<div><b style="color:var(--dim)">No hard errors.</b><br>`+
+      (view.op?`Every <code>${esc(view.op)}</code> configuration ran to completion.`:'No crashes recorded in this dataset.')+`</div></div>`;
+    return;
+  }
   $('#efam').innerHTML=fams.map(f=>{
     const nm=f.sig.replace(/^(TT_FATAL|TT_THROW)\s+/, m=>m);
     const msg=(f.sample.split('—')[1]||'').trim();
@@ -305,7 +392,7 @@ function renderErr(){
    COVERAGE SNAPSHOT (mini horizontal split bars)
 ========================================================= */
 function renderSnapshot(){
-  const sc=D.statusCounts, total=D.meta.total;
+  const sc=view.statusCounts, total=view.meta.total;
   $('#snapTotal').textContent=fmt(total);
   const rows=[
     {lab:'Verifiable & correct', v:sc.PASS, of:total, c:SMETA.PASS.c},
@@ -331,12 +418,23 @@ function renderSnapshot(){
 ========================================================= */
 let ulpSel='all';   // 'all' | a dtype name
 function renderUlp(){
-  const u=D.ulpDist;
-  if(!u || !u.total){ return; }            // no ULP data -> leave panel empty
+  const u=view.ulpDist;
+  const panel=$('#ulpBars'), chipHost=$('#ulpChips');
+  if(!u || !u.total){                       // focused op has no float/golden configs
+    $('#ulpTotal').textContent='0';
+    if(chipHost) chipHost.innerHTML='';
+    if(panel) panel.innerHTML=`<div class="chg-empty">`+
+      `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 14 3-4 4 3 4-6"/></svg>`+
+      `<div><b style="color:var(--dim)">No float accuracy data.</b><br>`+
+      (view.op?`<code>${esc(view.op)}</code> has no floating-point configs with a golden reference to measure ULP against.`:'No ULP-eligible configs.')+`</div></div>`;
+    return;
+  }
   $('#ulpTotal').textContent=fmt(u.total);
 
-  // chips: All + each float dtype that has data
+  // chips: All + each float dtype that has data. If the current selection isn't
+  // among this view's dtypes (e.g. we focused an op lacking it), fall back to All.
   const dtypes=Object.keys(u.byDtype);
+  if(ulpSel!=='all' && !dtypes.includes(ulpSel)) ulpSel='all';
   $('#ulpChips').innerHTML=
     [['all','All'],...dtypes.map(d=>[d,d])]
       .map(([k,lab])=>`<span class="ulp-chip${ulpSel===k?' active':''}" data-k="${k}">${lab}</span>`).join('');
@@ -470,7 +568,7 @@ function filteredRows(){
 
 function renderTable(){
   const rows=filteredRows();
-  $('#tableSub').innerHTML = `${rows.length} ops shown` +
+  $('#tableSub').innerHTML = `${rows.length} op${rows.length===1?'':'s'} shown` +
     (state.solo?` · soloing <b style="color:${SMETA[state.solo].c}">${SMETA[state.solo].label}</b>`:'') +
     (state.q?` · matching “${state.q}”`:'');
   const tb=$('#tbody');
@@ -697,16 +795,117 @@ function bindMatrix(root){
   scope.querySelectorAll('.cell:not(.c-empty)').forEach(c=> bindTip(c, cellTipHtml));
 }
 
-/* ---- search ---- */
-let stim=null;
-$('#search').addEventListener('input',e=>{
+/* =========================================================
+   FOCUS: search → pick an op → re-scope the whole page to it
+   --------------------------------------------------------
+   Typing filters the leaderboard (as before) AND opens an autocomplete of
+   matching ops. Picking one (click / ↑↓+Enter) calls enterFocus(op): rebuild
+   every analytics panel from that op's rows via computeFocus, show a banner +
+   header chip. Clear (× / "Show all" / Esc) restores the global view. The
+   leaderboard itself stays a full list you can still scan; focus is about the
+   charts above it.
+========================================================= */
+const searchEl=$('#search'), opListEl=$('#opList');
+const focusBar=$('#focusBar'), focusBarTxt=$('#focusBarTxt');
+const focusChip=$('#focusChip'), focusChipName=$('#focusChipName');
+let stim=null, acIndex=-1, acItems=[];        // autocomplete highlight + current matches
+
+// Re-render only the view-aware analytics panels (everything that reads `view`).
+function renderViews(){
+  renderMeta(); renderDonut(); renderDims(); renderErr(); renderSnapshot(); renderUlp();
+}
+function enterFocus(op){
+  if(!D.ops.includes(op)) return;
+  view = computeFocus(op);
+  const sc=view.statusCounts, verif=sc.PASS+sc.PCC_FAIL, pr=verif?pct(sc.PASS,verif):0;
+  focusBar.classList.add('on');
+  focusBarTxt.innerHTML=`Showing every chart for <b>${esc(op)}</b> only — `+
+    `${fmt(view.meta.total)} configs, ${pr.toFixed(0)}% verifiable pass rate. `+
+    `The leaderboard below still lists all ops.`;
+  focusChip.classList.add('on'); focusChipName.textContent=op;
+  closeAC();
+  renderViews();
+  syncHeaderHeight();                          // chip/banner can change header height
+}
+function exitFocus(){
+  if(!view.op) return;
+  view={ op:null, meta:D.meta, statusCounts:D.statusCounts, dims:D.dims,
+         ulpDist:D.ulpDist, errFamilies:D.errFamilies };
+  focusBar.classList.remove('on'); focusChip.classList.remove('on');
+  renderViews();
+  syncHeaderHeight();
+}
+
+/* ---- op autocomplete ---- */
+function closeAC(){ opListEl.hidden=true; searchEl.setAttribute('aria-expanded','false'); acIndex=-1; acItems=[]; }
+function openAC(q){
+  const ql=q.trim().toLowerCase();
+  // rank: prefix matches first, then substring; each carries its pass-rate for a cue
+  const byOp={}; D.opLeaderboard.forEach(o=>byOp[o.op]=o);
+  const matches=D.ops.filter(op=>!ql||op.toLowerCase().includes(ql))
+    .sort((a,b)=>{
+      if(ql){ const pa=a.toLowerCase().startsWith(ql), pb=b.toLowerCase().startsWith(ql); if(pa!==pb) return pa?-1:1; }
+      return a.localeCompare(b);
+    }).slice(0,60);
+  acItems=matches;
+  if(!matches.length){
+    opListEl.innerHTML=`<div class="op-none">no op matches “${esc(q)}”</div>`;
+    opListEl.hidden=false; searchEl.setAttribute('aria-expanded','true'); acIndex=-1; return;
+  }
+  opListEl.innerHTML=matches.map((op,i)=>{
+    const o=byOp[op], pr=(o&&o.passRate!=null)?Math.round(o.passRate*100)+'%':'—';
+    const col=(o&&o.passRate!=null)?(o.passRate>=.66?'var(--pass)':o.passRate>=.33?'var(--pcc)':'var(--err)'):'var(--faint)';
+    return `<div class="op-opt${i===acIndex?' on':''}" role="option" data-op="${esc(op)}" data-i="${i}" aria-selected="${i===acIndex}">`+
+      `<span class="onm">${esc(op)}</span>`+
+      `<span class="opr" style="color:${col}">${pr}</span>`+
+      `<span class="oct">${o?fmt(o.total):''}</span></div>`;
+  }).join('');
+  opListEl.hidden=false; searchEl.setAttribute('aria-expanded','true');
+  // pointer selection
+  $$('#opList .op-opt').forEach(el=>{
+    el.addEventListener('mousedown',ev=>{ ev.preventDefault(); enterFocus(el.dataset.op); searchEl.blur(); });
+    el.addEventListener('mouseenter',()=>{ acIndex=+el.dataset.i; highlightAC(); });
+  });
+}
+function highlightAC(){
+  $$('#opList .op-opt').forEach(el=>{
+    const on=+el.dataset.i===acIndex;
+    el.classList.toggle('on',on); el.setAttribute('aria-selected',on);
+    if(on) el.scrollIntoView({block:'nearest'});
+  });
+}
+searchEl.addEventListener('input',e=>{
+  const v=e.target.value;
   clearTimeout(stim);
-  stim=setTimeout(()=>{ state.q=e.target.value; renderTable(); },120);
+  stim=setTimeout(()=>{ state.q=v; renderTable(); },120);   // leaderboard filter (as before)
+  openAC(v);                                                 // + live op picker
 });
+searchEl.addEventListener('focus',()=>{ if(searchEl.value!==undefined) openAC(searchEl.value); });
+searchEl.addEventListener('keydown',e=>{
+  if(opListEl.hidden) return;
+  if(e.key==='ArrowDown'){ e.preventDefault(); acIndex=Math.min(acIndex+1,acItems.length-1); highlightAC(); }
+  else if(e.key==='ArrowUp'){ e.preventDefault(); acIndex=Math.max(acIndex-1,0); highlightAC(); }
+  else if(e.key==='Enter'){
+    if(acIndex>=0&&acItems[acIndex]){ e.preventDefault(); enterFocus(acItems[acIndex]); searchEl.blur(); }
+    else if(acItems.length===1){ e.preventDefault(); enterFocus(acItems[0]); searchEl.blur(); }
+  }
+});
+// close the dropdown when focus/clicks leave the search box
+document.addEventListener('mousedown',e=>{ if(!e.target.closest('.searchbox')) closeAC(); });
+searchEl.addEventListener('blur',()=>setTimeout(closeAC,120));
+
+$('#focusChipClear').addEventListener('click',exitFocus);
+$('#focusBarClear').addEventListener('click',exitFocus);
+
 document.addEventListener('mousemove',e=>{ if(tip.style.opacity==='1') moveTip(e); });
 addEventListener('keydown',e=>{
-  if(e.key==='/'&&document.activeElement!==$('#search')){ e.preventDefault(); $('#search').focus(); }
-  if(e.key==='Escape'){ $('#search').blur(); if(state.solo){state.solo=null;state.active=new Set(ORDER);renderChips();renderTable();} }
+  if(e.key==='/'&&document.activeElement!==searchEl){ e.preventDefault(); searchEl.focus(); }
+  if(e.key==='Escape'){
+    if(!opListEl.hidden){ closeAC(); return; }
+    if(view.op){ exitFocus(); return; }        // Esc clears focus first
+    searchEl.blur();
+    if(state.solo){state.solo=null;state.active=new Set(ORDER);renderChips();renderTable();}
+  }
 });
 
 /* =========================================================

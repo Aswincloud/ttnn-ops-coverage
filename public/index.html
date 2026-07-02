@@ -79,6 +79,43 @@ header.top{
 }
 #search::placeholder{color:var(--faint)}
 #search:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px #3b82f633;width:280px}
+/* op autocomplete dropdown */
+.op-list{position:absolute;top:calc(100% + 6px);left:0;right:0;z-index:120;
+  background:var(--card-2);border:1px solid var(--border);border-radius:10px;
+  box-shadow:0 12px 32px #0009;overflow:hidden auto;max-height:min(340px,60vh);padding:4px}
+.op-list[hidden]{display:none}
+.op-opt{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:7px;
+  cursor:pointer;font-family:var(--mono);font-size:12.5px;color:var(--dim);min-height:38px}
+.op-opt:hover,.op-opt.on{background:#16233c;color:var(--text)}
+.op-opt .onm{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.op-opt .opr{font-size:11px;font-weight:600;font-variant-numeric:tabular-nums}
+.op-opt .oct{font-size:10.5px;color:var(--faint)}
+.op-list .op-none{padding:12px 10px;color:var(--faint);font-size:12px;font-family:var(--mono)}
+/* focus chip in header — shows which op the page is scoped to */
+.focus-chip{display:none;align-items:center;gap:8px;flex:none;
+  background:#16233c;border:1px solid var(--primary);border-radius:10px;
+  padding:7px 8px 7px 12px;color:var(--text);font-family:var(--mono);font-size:12.5px}
+.focus-chip.on{display:inline-flex}
+.focus-chip .fl{color:var(--faint);font-size:11px}
+.focus-chip .fx{display:inline-flex;align-items:center;justify-content:center;
+  width:22px;height:22px;border-radius:6px;border:0;background:#22304a;color:var(--dim);
+  cursor:pointer;padding:0}
+.focus-chip .fx:hover{background:#2c3d5c;color:var(--text)}
+.focus-chip .fx svg{width:13px;height:13px}
+/* page-wide focus banner */
+.focus-bar{display:none;align-items:center;gap:12px;flex-wrap:wrap;
+  margin:0 0 14px;padding:11px 15px;border-radius:12px;
+  background:linear-gradient(180deg,#132339,#0f1c2e);border:1px solid var(--primary)}
+.focus-bar.on{display:flex}
+.focus-bar .fb-ico{width:30px;height:30px;flex:none;border-radius:8px;display:grid;place-items:center;
+  background:#1c2e49;color:#cfe0ff}
+.focus-bar .fb-ico svg{width:17px;height:17px}
+.focus-bar .fb-txt{flex:1;min-width:0;font-size:13px;color:var(--dim)}
+.focus-bar .fb-txt b{color:var(--text);font-family:var(--mono)}
+.focus-bar .fb-clear{flex:none;min-height:34px;padding:0 14px;border-radius:8px;
+  border:1px solid var(--border);background:var(--card-2);color:var(--dim);
+  font:inherit;font-size:12.5px;cursor:pointer}
+.focus-bar .fb-clear:hover{border-color:var(--primary);color:var(--text)}
 .updated{
   display:flex;align-items:center;gap:9px;flex:none;cursor:default;user-select:none;
   background:var(--card-2);border:1px solid var(--border);border-radius:10px;
@@ -244,6 +281,9 @@ select.inp{cursor:pointer;appearance:none;background-image:url("data:image/svg+x
 .kpi .lab{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--dim);font-weight:600;display:flex;align-items:center;gap:6px}
 .kpi .lab svg{width:14px;height:14px;opacity:.8}
 .kpi .val{font-family:var(--mono);font-size:30px;font-weight:600;letter-spacing:-.02em;margin-top:7px;line-height:1}
+/* op-name values (Operation KPI in focus mode) can be long — shrink + clamp so
+   they never overflow the card the way a fixed 30px mono would. */
+.kpi .val.val-op{font-size:22px;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
 .kpi .meta{font-size:11.5px;color:var(--faint);margin-top:6px;font-family:var(--mono)}
 .kpi .meta .up{color:var(--pass)} .kpi .meta .dn{color:var(--err)}
 
@@ -533,11 +573,25 @@ footer a{color:var(--dim);text-decoration:none;border-bottom:1px dotted #3a4d6e}
         <span class="uv" id="updatedVal">—</span>
       </span>
     </div>
+    <div class="focus-chip" id="focusChip" role="status">
+      <span class="fl">focused</span><span id="focusChipName"></span>
+      <button class="fx" id="focusChipClear" type="button" aria-label="Clear focus">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
     <div class="searchbox">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
-      <input id="search" type="search" placeholder="filter ops…  (e.g. add, _bw, prod)" autocomplete="off" aria-label="Filter operations">
+      <input id="search" type="search" placeholder="search an op to focus…  (e.g. add, _bw, prod)" autocomplete="off"
+             role="combobox" aria-expanded="false" aria-controls="opList" aria-autocomplete="list" aria-label="Search an operation to focus the page on">
+      <div class="op-list" id="opList" role="listbox" aria-label="Matching operations" hidden></div>
     </div>
   </header>
+
+  <div class="focus-bar" id="focusBar" role="status">
+    <span class="fb-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="M11 8v3l2 2"/></svg></span>
+    <span class="fb-txt" id="focusBarTxt"></span>
+    <button class="fb-clear" id="focusBarClear" type="button">Show all ops</button>
+  </div>
 
   <section class="kpis" id="kpis"></section>
 
