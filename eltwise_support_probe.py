@@ -194,6 +194,14 @@ UKW = {
 # binary ops needing a trailing scalar
 BPARAMS = {"addalpha": (1.0,), "subalpha": (1.0,), "isclose": ()}
 
+# binary ops that do NOT accept a python scalar as their 2nd operand (tensor-only).
+# everything else in BINARY has a tensor-scalar (TS) overload we also probe.
+_TS_TENSOR_ONLY = {
+    "addalpha", "subalpha", "atan2", "hypot", "nextafter", "isclose", "gcd", "lcm", "outer",
+}
+# base ops (shared by forward + in-place `_` variants) that support tensor-scalar.
+TS_SCALAR = {op for op in BINARY if op not in _TS_TENSOR_ONLY}
+
 
 def quantize_ref(t, dtype):
     """Round the torch reference to the device dtype so PCC measures kernel error,
@@ -400,12 +408,23 @@ def _bcast_shape(base, bcast):
     return None  # "none": use the operand's default (full) shape
 
 
-def build_args(base, dtype, layout, mem, device, bcast="none"):
+def _ts_scalar(dtype):
+    """The python scalar used as the 2nd operand for tensor-scalar (TS) probes."""
+    return 2 if dtype in _INT_DTYPES else 0.5
+
+
+def build_args(base, dtype, layout, mem, device, bcast="none", variant="tt"):
     """Construct (tt_args, tt_kwargs, torch_args) mirroring the base op's arity.
 
     The first operand always uses the full op shape; for binary/ternary ops the
-    remaining operands use the broadcast shape selected by `bcast`."""
+    remaining operands use the broadcast shape selected by `bcast`.
+    variant="ts" replaces the 2nd (tensor) operand of a binary op with a python
+    scalar, exercising the tensor-scalar overload instead of tensor-tensor."""
     a_t, a = build(base, dtype, layout, mem, device)
+    if variant == "ts" and base in BINARY:
+        s = _ts_scalar(dtype)
+        p = BPARAMS.get(base, ())
+        return [a, s, *p], {}, [a_t, s, *p]
     bsh = _bcast_shape(base, bcast)
     fi = bcast != "none"  # broadcast operands go interleaved (can't shard a sub-tile)
     if base in TERNARY:
@@ -475,7 +494,7 @@ def call_bw_golden(gf, grad, inputs, scalars, device, dtype, kw=None):
     return _trunc_int(r) if r is not None else None
 
 
-def run_op(name, fn, gf, dtype, layout, mem, device, bcast="none"):
+def run_op(name, fn, gf, dtype, layout, mem, device, bcast="none", variant="tt"):
     # resolve mode: forward / backward (_bw) / in-place (trailing _)
     mode, base = "fwd", name
     if name.endswith("_bw"):
@@ -676,7 +695,7 @@ def run_op(name, fn, gf, dtype, layout, mem, device, bcast="none"):
                 golden = None
         return finalize(out, golden, dtype)
 
-    tt_args, tt_kw, torch_args = build_args(base, dtype, layout, mem, device, bcast)
+    tt_args, tt_kw, torch_args = build_args(base, dtype, layout, mem, device, bcast, variant)
     if mode == "bw":
         g_t, g = build(base, dtype, layout, mem, device)
         out = fn(g, *tt_args, **tt_kw)
@@ -722,6 +741,19 @@ def bcast_list(name):
     return ["none"]
 
 
+def variants_for(name):
+    """(variant, csv_label) pairs to probe for an op. TS-capable binary ops (forward
+    and in-place `_`) are probed both tensor-tensor and tensor-scalar and get an
+    explicit ' TT'/' TS' suffix in the op column; every other op stays as-is (TT).
+    Backward (`_bw`) ops are left tensor-tensor only."""
+    if name.endswith("_bw"):
+        return [("tt", name)]
+    base = name[:-1] if name.endswith("_") else name
+    if base in TS_SCALAR:
+        return [("tt", f"{name} TT"), ("ts", f"{name} TS")]
+    return [("tt", name)]
+
+
 def dated_csv_path(day=None):
     """Path for a per-day CSV, e.g. history/eltwise_support_matrix_2026-06-28.csv."""
     import datetime
@@ -761,30 +793,39 @@ def probe_one(name, w, f, device):
         gf = ttnn.get_golden_function(fn)
     except Exception:
         gf = None
-    bcasts = bcast_list(name)
-    for ln, layout in LAYOUTS.items():
-        for mn, mem in MEMS.items():
-            for dn, dtype in DTYPES.items():
-                for bc in bcasts:
-                    # reseed per-config so inputs are identical whether this op is probed
-                    # alone (--op) or as part of a full run, independent of iteration order.
-                    # the non-broadcast ("none") key omits the bcast token so existing
-                    # tensor-tensor rows reproduce byte-for-byte with earlier runs.
-                    key = f"{name}/{dn}/{ln}/{mn}" + ("" if bc == "none" else f"/{bc}")
-                    torch.manual_seed(zlib.crc32(key.encode()) ^ _BASE_SEED)
-                    pcc = ulp = None
-                    try:
-                        acc, detail, pcc, ulp = run_op(name, fn, gf, dtype, layout, mem, device, bc)
-                    except Exception as e:
-                        # collapse to a single CSV-safe line; drop the volatile backtrace
-                        # (pointer addresses change every process run -> non-deterministic).
-                        acc = "FAIL"
-                        msg = str(e).split("backtrace")[0]
-                        detail = " | ".join(s.strip() for s in msg.strip().splitlines() if s.strip()).rstrip(" |")
-                    w.writerow(
-                        [name, dn, ln, mn, bc, acc, detail, input_range(name, dtype), _fmt_pcc(pcc), _fmt_ulp(ulp)]
-                    )
-                    f.flush()
+    for variant, label in variants_for(name):
+        # a python scalar has no shape -> tensor-scalar has nothing to broadcast.
+        bcasts = ["none"] if variant == "ts" else bcast_list(name)
+        for ln, layout in LAYOUTS.items():
+            for mn, mem in MEMS.items():
+                for dn, dtype in DTYPES.items():
+                    for bc in bcasts:
+                        # reseed per-config so inputs are identical whether this op is probed
+                        # alone (--op) or as part of a full run, independent of iteration order.
+                        # the non-broadcast ("none") key omits the bcast token, and the TT
+                        # variant omits the variant token, so existing tensor-tensor rows
+                        # reproduce byte-for-byte with earlier runs.
+                        key = (
+                            f"{name}/{dn}/{ln}/{mn}"
+                            + ("" if bc == "none" else f"/{bc}")
+                            + ("" if variant == "tt" else "/ts")
+                        )
+                        torch.manual_seed(zlib.crc32(key.encode()) ^ _BASE_SEED)
+                        pcc = ulp = None
+                        try:
+                            acc, detail, pcc, ulp = run_op(
+                                name, fn, gf, dtype, layout, mem, device, bc, variant
+                            )
+                        except Exception as e:
+                            # collapse to a single CSV-safe line; drop the volatile backtrace
+                            # (pointer addresses change every process run -> non-deterministic).
+                            acc = "FAIL"
+                            msg = str(e).split("backtrace")[0]
+                            detail = " | ".join(s.strip() for s in msg.strip().splitlines() if s.strip()).rstrip(" |")
+                        w.writerow(
+                            [label, dn, ln, mn, bc, acc, detail, input_range(name, dtype), _fmt_pcc(pcc), _fmt_ulp(ulp)]
+                        )
+                        f.flush()
 
 
 def main():
