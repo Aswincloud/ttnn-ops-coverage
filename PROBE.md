@@ -227,3 +227,4 @@ cat /tmp/h.csv /tmp/b.csv > "$CSV"
 4. If it needs a non-default shape, add it to `PER_OP_SHAPE`.
 5. If torch has no golden for it, add one to the relevant `MANUAL_*` dict.
 6. Probe it alone: `python .../eltwise_support_probe.py --op <name>`.
+- merge-queue smoke test 2026-07-03 (throwaway; safe to revert)
