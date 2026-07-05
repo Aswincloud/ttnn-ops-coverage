@@ -68,3 +68,23 @@ jobs:
         run: npm ci
       - name: ESLint
         run: npm run lint
+
+  e2e:
+    name: e2e
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+      - name: Build data (process.py -> public/data.js)
+        run: python3 process.py
+      - name: Install test deps
+        run: npm ci
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+      - name: Run E2E tests
+        run: npm run test:e2e
