@@ -159,6 +159,17 @@ header.top{
 .suggest-btn svg{width:16px;height:16px;color:var(--primary-hi);flex:none}
 .suggest-btn:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
 @media(max-width:760px){.suggest-btn .st-label{display:none}.suggest-btn{padding:8px 9px}}
+/* segmented hardware-board switch — two pills sharing one bordered track */
+.board-toggle{display:inline-flex;flex:none;gap:2px;padding:3px;border-radius:11px;
+  border:1px solid #2a456f;background:linear-gradient(165deg,#13233f,#0e1a2e)}
+.board-toggle[hidden]{display:none}
+.board-btn{cursor:pointer;font-family:var(--sans);font-size:12.5px;font-weight:600;
+  color:var(--faint);background:transparent;border:0;border-radius:8px;padding:6px 13px;
+  transition:color var(--t),background var(--t),box-shadow var(--t)}
+.board-btn:hover{color:var(--text)}
+.board-btn.on{color:var(--text);background:linear-gradient(165deg,#1c355c,#12233c);
+  box-shadow:0 0 0 1px #3b82f24d inset}
+.board-btn:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
 
 /* ---- modal ---- */
 .modal-overlay{
@@ -549,6 +560,9 @@ footer a{color:var(--dim);text-decoration:none;border-bottom:1px dotted #3a4d6e}
       </div>
     </div>
     <div class="spacer"></div>
+    <!-- Hardware-board switch (N150 | P100a). Populated + shown by app.js only
+         when data.js carries >=2 boards; a single board renders nothing. -->
+    <div class="board-toggle" id="boardToggle" role="group" aria-label="Hardware board" hidden></div>
     <button class="suggest-btn" id="changesOpen" type="button" aria-haspopup="dialog"
             title="See what changed since the previous probe run">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
