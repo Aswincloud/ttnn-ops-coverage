@@ -9,9 +9,11 @@ Run:  python tests/ttnn/unit_tests/operations/eltwise/eltwise_support_probe.py
 Env:  PROBE_DTYPES, PROBE_LAYOUTS, PROBE_MEMS to subset axes (comma separated).
 """
 import os
+import sys
 import csv
 import zlib
 import math
+import subprocess
 import torch
 import ttnn
 
@@ -133,6 +135,14 @@ div_bw div_no_nan_bw celu_bw elu_bw hardtanh_bw leaky_relu_bw threshold_bw softp
 rpow_bw rdiv_bw logiteps_bw polygamma_bw prod_bw assign_bw
 angle_bw conj_bw imag_bw real_bw polar_bw concat_bw repeat_bw
 """.split()
+
+# PROBE_OPS subsets the op list (comma separated), mirroring PROBE_DTYPES/LAYOUTS/MEMS.
+# The child worker inherits this env, so the supervisor and worker agree on the sweep;
+# handy for targeted runs/tests, e.g. PROBE_OPS=prod.
+_ops_env = os.environ.get("PROBE_OPS")
+if _ops_env:
+    _wanted = [o for o in _ops_env.split(",") if o]
+    OPS = [o for o in OPS if o in _wanted] or _wanted
 
 # ----------------------------------------------------------------------------- per-op spec
 # kind: u=unary, b=binary, t=ternary. params: extra scalar args appended after tensors.
@@ -787,49 +797,95 @@ def _fmt_ulp(u):
     return "" if u is None else f"{u:.3f}"
 
 
-def probe_one(name, w, f, device):
-    fn = getattr(ttnn, name, None)
-    if fn is None or not callable(fn):
+def iter_configs(targets):
+    """Yield one descriptor per CSV row, in the exact order rows are written, for the
+    given op targets. This is the single source of truth for the flattened sweep order,
+    shared by the in-process prober, the crash-isolated worker (to `--skip` already-done
+    configs) and the supervisor (to identify/record the config that crashed). The global
+    index of a descriptor equals the 0-based index of its CSV data row, so progress can
+    be recovered purely by counting rows."""
+    for name in targets:
+        fn = getattr(ttnn, name, None)
+        if fn is None or not callable(fn):
+            yield {"name": name, "no_op": True, "label": name}
+            continue
+        for variant, label in variants_for(name):
+            # a python scalar has no shape -> tensor-scalar has nothing to broadcast.
+            bcasts = ["none"] if variant == "ts" else bcast_list(name)
+            for ln, layout in LAYOUTS.items():
+                for mn, mem in MEMS.items():
+                    for dn, dtype in DTYPES.items():
+                        for bc in bcasts:
+                            yield {
+                                "name": name,
+                                "no_op": False,
+                                "label": label,
+                                "variant": variant,
+                                "ln": ln,
+                                "layout": layout,
+                                "mn": mn,
+                                "mem": mem,
+                                "dn": dn,
+                                "dtype": dtype,
+                                "bc": bc,
+                            }
+
+
+def _probe_config(cfg, w, f, device, gf_cache):
+    """Probe a single flattened config descriptor and write its one CSV row."""
+    name = cfg["name"]
+    if cfg.get("no_op"):
         w.writerow([name, "-", "-", "-", "none", "NO_OP", "not in ttnn", "", "", ""])
         f.flush()
         return
+    fn = getattr(ttnn, name)
+    if name not in gf_cache:
+        try:
+            gf_cache[name] = ttnn.get_golden_function(fn)
+        except Exception:
+            gf_cache[name] = None
+    gf = gf_cache[name]
+    dn, ln, mn, bc, variant = cfg["dn"], cfg["ln"], cfg["mn"], cfg["bc"], cfg["variant"]
+    # reseed per-config so inputs are identical whether this op is probed alone (--op)
+    # or as part of a full run, independent of iteration order. the non-broadcast
+    # ("none") key omits the bcast token, and the TT variant omits the variant token,
+    # so existing tensor-tensor rows reproduce byte-for-byte with earlier runs.
+    key = (
+        f"{name}/{dn}/{ln}/{mn}"
+        + ("" if bc == "none" else f"/{bc}")
+        + ("" if variant == "tt" else "/ts")
+    )
+    torch.manual_seed(zlib.crc32(key.encode()) ^ _BASE_SEED)
+    pcc = ulp = None
     try:
-        gf = ttnn.get_golden_function(fn)
-    except Exception:
-        gf = None
-    for variant, label in variants_for(name):
-        # a python scalar has no shape -> tensor-scalar has nothing to broadcast.
-        bcasts = ["none"] if variant == "ts" else bcast_list(name)
-        for ln, layout in LAYOUTS.items():
-            for mn, mem in MEMS.items():
-                for dn, dtype in DTYPES.items():
-                    for bc in bcasts:
-                        # reseed per-config so inputs are identical whether this op is probed
-                        # alone (--op) or as part of a full run, independent of iteration order.
-                        # the non-broadcast ("none") key omits the bcast token, and the TT
-                        # variant omits the variant token, so existing tensor-tensor rows
-                        # reproduce byte-for-byte with earlier runs.
-                        key = (
-                            f"{name}/{dn}/{ln}/{mn}"
-                            + ("" if bc == "none" else f"/{bc}")
-                            + ("" if variant == "tt" else "/ts")
-                        )
-                        torch.manual_seed(zlib.crc32(key.encode()) ^ _BASE_SEED)
-                        pcc = ulp = None
-                        try:
-                            acc, detail, pcc, ulp = run_op(
-                                name, fn, gf, dtype, layout, mem, device, bc, variant
-                            )
-                        except Exception as e:
-                            # collapse to a single CSV-safe line; drop the volatile backtrace
-                            # (pointer addresses change every process run -> non-deterministic).
-                            acc = "FAIL"
-                            msg = str(e).split("backtrace")[0]
-                            detail = " | ".join(s.strip() for s in msg.strip().splitlines() if s.strip()).rstrip(" |")
-                        w.writerow(
-                            [label, dn, ln, mn, bc, acc, detail, input_range(name, dtype), _fmt_pcc(pcc), _fmt_ulp(ulp)]
-                        )
-                        f.flush()
+        acc, detail, pcc, ulp = run_op(name, fn, gf, cfg["dtype"], cfg["layout"], cfg["mem"], device, bc, variant)
+    except Exception as e:
+        # collapse to a single CSV-safe line; drop the volatile backtrace
+        # (pointer addresses change every process run -> non-deterministic).
+        acc = "FAIL"
+        msg = str(e).split("backtrace")[0]
+        detail = " | ".join(s.strip() for s in msg.strip().splitlines() if s.strip()).rstrip(" |")
+    w.writerow([cfg["label"], dn, ln, mn, bc, acc, detail, input_range(name, cfg["dtype"]), _fmt_pcc(pcc), _fmt_ulp(ulp)])
+    f.flush()
+
+
+def _crash_row(cfg, sig):
+    """A permanent CSV record for a config whose worker died by a hard signal (e.g.
+    SIGSEGV): the supervisor writes this so a segfault never silently drops the config."""
+    reason = f"hard crash (signal {sig})"
+    if cfg.get("no_op"):
+        return [cfg["name"], "-", "-", "-", "none", "CRASH", reason, "", "", ""]
+    return [
+        cfg["label"], cfg["dn"], cfg["ln"], cfg["mn"], cfg["bc"],
+        "CRASH", reason, input_range(cfg["name"], cfg["dtype"]), "", "",
+    ]
+
+
+def probe_one(name, w, f, device, gf_cache=None):
+    if gf_cache is None:
+        gf_cache = {}
+    for cfg in iter_configs([name]):
+        _probe_config(cfg, w, f, device, gf_cache)
 
 
 def _parse_shard(spec):
@@ -876,6 +932,106 @@ def merge_csv_files(input_paths, output_path):
     print(f"merged {len(input_paths)} files -> {output_path} ({len(ordered)} rows)", flush=True)
 
 
+def _resolve_targets(args):
+    """The op list this invocation should cover, honoring --op and --shard. Both the
+    supervisor and its workers call this with the same args so they agree on order."""
+    targets = [args.op] if args.op else list(OPS)
+    if args.shard and not args.op:
+        idx, total = _parse_shard(args.shard)
+        # 1-based index -> 0-based stride slice: shard i takes OPS[i-1::total],
+        # so shards are interleaved, disjoint, and together cover every op.
+        targets = targets[idx - 1 :: total]
+    return targets
+
+
+def _count_data_rows(path):
+    """Number of data rows (excluding the header) currently in the CSV. Because every
+    config maps to exactly one row, this is also the number of configs completed so far."""
+    if not os.path.exists(path):
+        return 0
+    with open(path, newline="") as fh:
+        n = sum(1 for _ in csv.reader(fh))
+    return max(0, n - 1)
+
+
+def run_worker_all(targets, out_path, skip):
+    """Worker: open the device ONCE and probe the whole (flattened) sweep, skipping the
+    first `skip` configs. Rows are appended and flushed one at a time so that if a config
+    hard-crashes this process, everything completed before it is already on disk. The
+    supervisor (parent) recreates a fresh worker/device only when that happens."""
+    device = ttnn.open_device(device_id=0)
+    f = open(out_path, "a", newline="")
+    w = csv.writer(f)
+    gf_cache = {}
+    last_op = None
+    try:
+        for i, cfg in enumerate(iter_configs(targets)):
+            if i < skip:
+                continue
+            if cfg["name"] != last_op:
+                if last_op is not None:
+                    print(f"  done {last_op}", flush=True)
+                last_op = cfg["name"]
+            _probe_config(cfg, w, f, device, gf_cache)
+        if last_op is not None:
+            print(f"  done {last_op}", flush=True)
+    finally:
+        f.close()
+        ttnn.close_device(device)
+
+
+def run_supervised(targets, out_path, shard_spec=None):
+    """Supervisor: run the whole sweep in a single worker (one device). Only if the
+    worker dies from a hard signal (e.g. SIGSEGV) do we record the offending config as a
+    CRASH row and relaunch a fresh worker (fresh device) at the very next config. In the
+    common no-crash case this is one device open for the entire run; k crashes cost k
+    extra device reopens and never skip more than the single crashing config."""
+    configs = list(iter_configs(targets))
+    total = len(configs)
+
+    # (re)initialize the CSV with just the header; workers append from here.
+    with open(out_path, "w", newline="") as fh:
+        csv.writer(fh).writerow(HEADER)
+
+    base_cmd = [sys.executable, os.path.abspath(__file__), "--worker-all", "--out", out_path]
+    if shard_spec:
+        base_cmd += ["--shard", shard_spec]  # so the child computes the identical target slice
+
+    done = 0
+    crashes = 0
+    while done < total:
+        rc = subprocess.run(base_cmd + ["--skip", str(done)]).returncode
+        completed = _count_data_rows(out_path)
+        if rc == 0:
+            done = completed
+            break
+        # negative -> killed by signal (POSIX); >=128 -> shell-style 128+signal.
+        if rc < 0 or rc >= 128:
+            sig = -rc if rc < 0 else rc - 128
+            idx = completed  # first config with no row yet == the one that just crashed
+            if idx >= total:
+                break
+            cfg = configs[idx]
+            with open(out_path, "a", newline="") as fh:
+                csv.writer(fh).writerow(_crash_row(cfg, sig))
+            crashes += 1
+            done = completed + 1  # strictly increasing -> guaranteed to terminate
+            desc = cfg["name"] if cfg.get("no_op") else f"{cfg['label']}/{cfg['dn']}/{cfg['ln']}/{cfg['mn']}/{cfg['bc']}"
+            print(
+                f"⚠️  worker died (signal {sig}) at config #{idx} [{desc}]; recorded CRASH, "
+                f"reopening device and resuming at #{done}/{total}",
+                flush=True,
+            )
+            continue
+        # non-signal, non-zero exit: a real error (bad device, bug) -> don't spin.
+        print(f"❌ worker exited with code {rc} (not a signal); stopping at #{done}/{total}.", flush=True)
+        break
+
+    if crashes:
+        print(f"recovered from {crashes} hard crash(es)", flush=True)
+    return total, crashes
+
+
 def main():
     import argparse
 
@@ -904,6 +1060,17 @@ def main():
         help="standalone: union these shard CSVs into --out (or the stable path) and exit. "
         "Rows are deduped by (op,dtype,layout,mem,bcast) and sorted deterministically.",
     )
+    ap.add_argument(
+        "--no-isolate",
+        action="store_true",
+        help="run the full sweep in-process (no crash isolation). A hard crash aborts the run.",
+    )
+    ap.add_argument(
+        "--worker-all",
+        action="store_true",
+        help=argparse.SUPPRESS,  # internal: single-device worker spawned by the supervisor
+    )
+    ap.add_argument("--skip", type=int, default=0, help=argparse.SUPPRESS)  # internal: resume offset
     args = ap.parse_args()
 
     if args.list_ops:
@@ -925,29 +1092,41 @@ def main():
     else:
         out_path = CSV_PATH
 
-    mode = "a" if args.op else "w"
-    device = ttnn.open_device(device_id=0)
-    f = open(out_path, mode, newline="")
-    w = csv.writer(f)
-    if mode == "w":
-        w.writerow(HEADER)
-    try:
-        targets = [args.op] if args.op else list(OPS)
-        if args.shard and not args.op:
-            idx, total = _parse_shard(args.shard)
-            # 1-based index -> 0-based stride slice: shard i takes OPS[i-1::total],
-            # so shards are interleaved, disjoint, and together cover every op.
-            targets = targets[idx - 1 :: total]
-            print(f"shard {idx}/{total}: {len(targets)} of {len(OPS)} ops", flush=True)
-        for name in targets:
-            probe_one(name, w, f, device)
-            print(f"  done {name}", flush=True)
-    finally:
-        f.close()
-        ttnn.close_device(device)
+    targets = _resolve_targets(args)
+
+    # internal worker entry: probe the (flattened) sweep with one device, honoring --skip.
+    if args.worker_all:
+        run_worker_all(targets, out_path, args.skip)
+        return
+
+    if args.shard and not args.op:
+        print(f"shard {args.shard}: {len(targets)} of {len(OPS)} ops", flush=True)
+
+    # Full sweep: run under the crash-isolating supervisor by default so a hard crash
+    # (e.g. a kernel-build SIGSEGV) only forfeits the single offending config -- the
+    # device is recreated and the sweep resumes at the next config. --op (single-op
+    # append) and --no-isolate keep the original in-process behavior.
+    if not args.op and not args.no_isolate:
+        run_supervised(targets, out_path, shard_spec=args.shard)
+    else:
+        mode = "a" if args.op else "w"
+        device = ttnn.open_device(device_id=0)
+        f = open(out_path, mode, newline="")
+        w = csv.writer(f)
+        if mode == "w":
+            w.writerow(HEADER)
+        gf_cache = {}
+        try:
+            for name in targets:
+                probe_one(name, w, f, device, gf_cache)
+                print(f"  done {name}", flush=True)
+        finally:
+            f.close()
+            ttnn.close_device(device)
 
     # keep a stable "latest" copy so a dashboard can always read one fixed path
-    if args.dated and mode == "w" and out_path != CSV_PATH:
+    # (only for a full run; --op just appends a single op and must not clobber it).
+    if args.dated and not args.op and out_path != CSV_PATH:
         import shutil
 
         shutil.copyfile(out_path, CSV_PATH)
