@@ -5,7 +5,21 @@
 // If it fails to load (network hiccup, cache miss, build gap) window.DASH is
 // undefined — without this guard the very next line throws and the page renders
 // blank with only a console error. Instead, show a readable message + reload.
-const D = window.DASH;
+//
+// data.js is nested per hardware board:
+//   window.DASH = { boards:{ n150:{…flat…}, p100a:{…} }, defaultBoard, boardOrder }
+// Resolve the active board (?board= query > localStorage > defaultBoard > first
+// present) into `D`, so every downstream reader sees the same flat single-board
+// object it always has. Switching boards just re-picks here after a reload.
+const RAW = window.DASH || {};
+const BOARDS = RAW.boards || {};
+const BOARD_KEYS = Object.keys(BOARDS);
+const BOARD_STORE = 'ttnn-cov:board';
+const _wantBoard = new URLSearchParams(location.search).get('board')
+  || (()=>{ try{ return localStorage.getItem(BOARD_STORE); }catch{ return null; } })();
+const BOARD = BOARDS[_wantBoard] ? _wantBoard
+  : (BOARDS[RAW.defaultBoard] ? RAW.defaultBoard : BOARD_KEYS[0]);
+const D = BOARDS[BOARD];
 if(!D || !D.statusCounts || !D.rows){
   const host = document.querySelector('.wrap') || document.body;
   if(host) host.innerHTML =
@@ -483,6 +497,36 @@ const COLS=[
   {k:'total', label:'Σ', num:true},
 ].filter(c=>!SMETA[c.k] || (D.statusCounts[c.k]||0) > 0);
 
+// Hardware-board switch (N150 | P100a). Only shown when >=2 boards are present
+// in data.js; a single board has nothing to switch to. Selecting a board
+// persists the choice and reloads — app.js re-resolves `D` at the top from the
+// ?board= query, so the whole page re-renders against that board with no
+// in-place re-render machinery (the renderers all read the resolved `D`).
+const BOARD_LABEL = { n150:'N150', p100a:'P100a' };
+function boardLabel(b){ return BOARD_LABEL[b] || b.toUpperCase(); }
+function renderBoardToggle(){
+  const host = $('#boardToggle');
+  if(!host) return;
+  const order = (Array.isArray(RAW.boardOrder) && RAW.boardOrder.length ? RAW.boardOrder : BOARD_KEYS)
+    .filter(b => BOARDS[b]);
+  if(order.length < 2){ host.hidden = true; return; }   // nothing to switch
+  host.hidden = false;
+  host.innerHTML = order.map(b=>{
+    const on = b===BOARD;
+    return `<button class="board-btn${on?' on':''}" type="button" data-b="${b}" aria-pressed="${on}"
+      title="Show ${boardLabel(b)} coverage">${boardLabel(b)}</button>`;
+  }).join('');
+  $$('#boardToggle .board-btn').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      const b = btn.dataset.b;
+      if(b===BOARD) return;
+      try{ localStorage.setItem(BOARD_STORE, b); }catch{ /* private mode: URL still carries it */ }
+      const u = new URL(location.href);
+      u.searchParams.set('board', b);
+      location.assign(u.toString());   // reload; app.js re-resolves D for `b`
+    });
+  });
+}
 function renderChips(){
   const sc=D.statusCounts;
   $('#chips').innerHTML = ORDER.map(s=>{
@@ -1184,6 +1228,7 @@ addEventListener('resize',()=>{ clearTimeout(rTO); rTO=setTimeout(syncHeaderHeig
 
 /* ---- boot ---- */
 renderMeta();
+renderBoardToggle();
 renderUpdated();
 renderDonut();
 renderDims();

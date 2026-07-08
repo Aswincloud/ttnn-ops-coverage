@@ -4,7 +4,8 @@ name: Daily eltwise support matrix (tt-metal)
 #   rebase our tt-metal branch on upstream main -> dispatch ONE test-dispatch
 #   run that fans out to 2 boards x 10 shards off a single build -> poll it to
 #   completion -> download the 2 per-board combined support-matrix CSVs
-#   -> land them under data/workflow/{n150,p100a}/ via a single auto-merging PR.
+#   -> land each as the board's root eltwise_support_matrix_<board>.csv (the
+#   dashboard source) + a dated history/workflow/ copy, via one auto-merging PR.
 #
 # The tt-metal calls need push/workflow access to tenstorrent/tt-metal, which
 # this repo's GITHUB_TOKEN/App does not have, so they use the TT_METAL_PAT
@@ -31,7 +32,7 @@ env:
   TT_BRANCH: Aswinmcw/test_eltwise_support
   RAW_BASE: https://raw.githubusercontent.com/Aswincloud/ttnn-ops-coverage/main
   # The tt-metal matrix is board-only; each board yields an artifact
-  # eltwise-support-matrix-<HW> that lands in data/workflow/<hw lowercased>/.
+  # eltwise-support-matrix-<HW> that becomes eltwise_support_matrix_<hw>.csv.
   BOARDS: "N150 P100a"
 
 jobs:
@@ -227,29 +228,37 @@ jobs:
           BRANCH="workflow/support-${DATE}-${{ github.run_id }}"
           git checkout -b "$BRANCH"
 
-          # Drop each board's CSV into data/workflow/<hw>/.
+          # For each board write BOTH: the per-board root CSV (the dashboard's
+          # source of truth, overwritten each run) AND a dated copy under
+          # history/workflow/. process.py's compute_changes() diffs a board's
+          # root CSV against its previous dated history, and REQUIRES the newest
+          # dated file to equal the root — so these must be written together.
           for HW in $BOARDS; do
             SUBDIR=$(printf '%s' "$HW" | tr '[:upper:]' '[:lower:]')
             SRC=$(ls _artifact/${HW}/eltwise_support_matrix.csv | head -1)
-            mkdir -p "data/workflow/${SUBDIR}"
-            DEST="data/workflow/${SUBDIR}/${DATE}_eltwise_support_matrix.csv"
-            cp "$SRC" "$DEST"
-            git add "$DEST"
+
+            ROOT_CSV="eltwise_support_matrix_${SUBDIR}.csv"
+            cp "$SRC" "$ROOT_CSV"
+            git add "$ROOT_CSV"
+
+            mkdir -p history/workflow
+            HIST_CSV="history/workflow/eltwise_support_matrix_${SUBDIR}_${DATE}.csv"
+            cp "$SRC" "$HIST_CSV"
+            git add "$HIST_CSV"
           done
-          # Do NOT touch the root eltwise_support_matrix.csv, process.py, or
-          # public/data.js — the results are intentionally isolated under
-          # data/workflow/ for now (the dashboard reads the root CSV).
+          # public/data.js is regenerated from these root CSVs by process.py at
+          # deploy (CF Workers Builds) — it stays gitignored, never committed.
 
           if git diff --cached --quiet; then
             echo "Nothing to commit (identical files already present); skipping PR."
             exit 0
           fi
-          git commit -m "data(workflow): eltwise support matrix ${DATE} (2 boards)"
+          git commit -m "data: eltwise support matrix ${DATE} (per-board: N150+P100a)"
           git push "https://x-access-token:${GH_TOKEN}@github.com/${OUR_REPO}.git" "$BRANCH"
 
           PR_URL=$(gh pr create -R "$OUR_REPO" --base main --head "$BRANCH" \
-            --title "data(workflow): eltwise support matrix ${DATE} (2 boards)" \
-            --body "Automated daily tt-metal eltwise support-probe run — one build, 2 boards (N150+P100a viommu) x 10 shards. Data-only, isolated under \`data/workflow/{n150,p100a}/\`; does not touch the root \`eltwise_support_matrix.csv\`.")
+            --title "data: eltwise support matrix ${DATE} (per-board: N150+P100a)" \
+            --body "Automated daily tt-metal eltwise support-probe run — one build, 2 boards (N150+P100a viommu) x 10 shards. Updates each board's root \`eltwise_support_matrix_<board>.csv\` (the dashboard source) plus a dated copy under \`history/workflow/\`.")
           echo "Opened $PR_URL"
 
           # The membership-gated auto-approve workflow won't fire for a bot
@@ -258,10 +267,11 @@ jobs:
           GH_TOKEN="$APPROVE_TOKEN" gh pr review "$PR_URL" -R "$OUR_REPO" --approve \
             --body "Auto-approving daily support data PR (generated, isolated under data/workflow/)."
 
-          # No --delete-branch: the repo uses a merge queue, which rejects that
-          # flag ("Cannot use --delete-branch when merge queue enabled") and
-          # deletes the head branch itself on merge.
-          gh pr merge "$PR_URL" -R "$OUR_REPO" --squash --auto
+          # Bare --auto only: the repo's merge queue sets the merge strategy and
+          # rejects both --squash ("merge strategy set by merge queue") and
+          # --delete-branch ("Cannot use --delete-branch when merge queue
+          # enabled"); the queue squashes and deletes the head branch itself.
+          gh pr merge "$PR_URL" -R "$OUR_REPO" --auto
           echo "✅ Auto-merge enabled; merge queue will land it once checks pass."
 
       # 7. On any failure, file/dedupe an issue assigned to Aswinmcw.

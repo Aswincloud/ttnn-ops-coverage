@@ -72,7 +72,7 @@ Keyboard: `/` focuses search · `Esc` clears search/solo or closes a modal.
 │   ├── app.js              #   chart/table renderer (no deps)
 │   └── data.js             #   generated — window.DASH payload (gitignored)
 ├── worker/index.js         # serves assets + POST /api/feedback → Resend
-├── eltwise_support_matrix.csv # source data (regenerate data.js from this)
+├── eltwise_support_matrix_<board>.csv # per-board source data, e.g. _n150 / _p100a (regenerate data.js from these)
 ├── process.py              # CSV → public/data.js transformer + classifier + run diff
 ├── eltwise_support_probe.py # the probe that GENERATES the matrix CSV (see PROBE.md)
 ├── history/                # dated probe snapshots (--dated); power the "Changes" diff
@@ -85,10 +85,11 @@ Keyboard: `/` focuses search · `Esc` clears search/solo or closes a modal.
 ```
 
 `public/data.js` is a **build artifact** — it is *not* committed (gitignored). CI and
-Cloudflare regenerate it from `eltwise_support_matrix.csv` on every deploy (and you regenerate
-it locally with `python3 process.py`). **`eltwise_support_matrix.csv` is the single source of
-truth** — it's the probe's native output, overwritten by each daily run (which also drops a
-dated copy in `history/`).
+Cloudflare regenerate it from the per-board `eltwise_support_matrix_<board>.csv` files on every
+deploy (and you regenerate it locally with `python3 process.py`). **The per-board root CSVs are
+the single source of truth** — each is a board's probe output, overwritten by each daily run
+(which also drops a dated copy in `history/workflow/`). `data.js` is nested per board
+(`window.DASH.boards.<board>`); the dashboard's N150 | P100a switch picks which one to render.
 
 ---
 
