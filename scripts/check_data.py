@@ -16,9 +16,7 @@ Exits non-zero with a clear message on the first failure. Runnable locally:
     python3 scripts/check_data.py
 """
 import csv
-import glob
 import json
-import os
 import re
 import subprocess
 import sys

@@ -511,20 +511,28 @@ function renderBoardToggle(){
     .filter(b => BOARDS[b]);
   if(order.length < 2){ host.hidden = true; return; }   // nothing to switch
   host.hidden = false;
-  host.innerHTML = order.map(b=>{
+  // Build via DOM nodes + textContent/dataset (not innerHTML): board names come
+  // from CSV filenames, so string-interpolating them into markup would be an
+  // injection vector if a filename ever carried angle brackets/quotes.
+  host.textContent = '';
+  order.forEach(b=>{
     const on = b===BOARD;
-    return `<button class="board-btn${on?' on':''}" type="button" data-b="${b}" aria-pressed="${on}"
-      title="Show ${boardLabel(b)} coverage">${boardLabel(b)}</button>`;
-  }).join('');
-  $$('#boardToggle .board-btn').forEach(btn=>{
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'board-btn' + (on ? ' on' : '');
+    btn.dataset.b = b;
+    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    const label = boardLabel(b);
+    btn.title = `Show ${label} coverage`;
+    btn.textContent = label;
     btn.addEventListener('click',()=>{
-      const b = btn.dataset.b;
       if(b===BOARD) return;
       try{ localStorage.setItem(BOARD_STORE, b); }catch{ /* private mode: URL still carries it */ }
       const u = new URL(location.href);
       u.searchParams.set('board', b);
       location.assign(u.toString());   // reload; app.js re-resolves D for `b`
     });
+    host.appendChild(btn);
   });
 }
 function renderChips(){

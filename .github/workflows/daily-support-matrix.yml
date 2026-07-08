@@ -265,7 +265,7 @@ jobs:
           # author, so approve inline with a different write identity
           # (WRITE_ACCESS_PAT = Aswincloud-Bot, a codeowners-bypass member).
           GH_TOKEN="$APPROVE_TOKEN" gh pr review "$PR_URL" -R "$OUR_REPO" --approve \
-            --body "Auto-approving daily support data PR (generated, isolated under data/workflow/)."
+            --body "Auto-approving daily support data PR (generated: per-board root eltwise_support_matrix_<board>.csv + history/workflow/ snapshots)."
 
           # Bare --auto only: the repo's merge queue sets the merge strategy and
           # rejects both --squash ("merge strategy set by merge queue") and

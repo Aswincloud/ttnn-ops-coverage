@@ -48,9 +48,15 @@ try {
   } else {
     // Run the reconcile + broadcast-axis guards PER board.
     for (const [name, D] of Object.entries(boards)) {
+      // Shape-guard first so a malformed board fails WITH its name, not via the
+      // generic outer catch (which loses which board was bad).
+      if (!D || typeof D !== "object" || !D.statusCounts || !Array.isArray(D.rows)) {
+        fail(`data.js[${name}]: malformed payload (missing statusCounts or rows[])`);
+        continue;
+      }
       const sum = Object.values(D.statusCounts).reduce((a, b) => a + b, 0);
       const total = D.meta?.total;
-      const nrows = (D.rows || []).length;
+      const nrows = D.rows.length;
       if (sum !== total) fail(`data.js[${name}]: statusCounts sum ${sum} != meta.total ${total}`);
       else if (nrows !== total) fail(`data.js[${name}]: rows length ${nrows} != meta.total ${total}`);
       else ok(`data.js[${name}] boots + reconciles (${total} configs, ${D.opLeaderboard?.length ?? "?"} ops)`);
