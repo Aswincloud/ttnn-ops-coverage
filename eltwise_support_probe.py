@@ -832,6 +832,50 @@ def probe_one(name, w, f, device):
                         f.flush()
 
 
+def _parse_shard(spec):
+    """Parse a '--shard INDEX/TOTAL' spec (1-based) into (index, total)."""
+    try:
+        i_s, t_s = spec.split("/", 1)
+        idx, total = int(i_s), int(t_s)
+    except ValueError:
+        raise SystemExit(f"--shard must be INDEX/TOTAL (e.g. 3/10), got {spec!r}")
+    if total < 1 or idx < 1 or idx > total:
+        raise SystemExit(f"--shard out of range: need 1 <= index <= total, got {idx}/{total}")
+    return idx, total
+
+
+def merge_csv_files(input_paths, output_path):
+    """Union shard CSVs into one, deduped by the config key (op,dtype,layout,mem,bcast)
+    — the first 5 columns, which uniquely identify a probed row — and sorted by that
+    key so the output is byte-stable regardless of shard order. Header is taken from
+    the files (all shards share HEADER); rows are validated to match its width."""
+    key_cols = 5  # op, dtype, layout, mem, bcast
+    merged = {}  # key tuple -> full row
+    seen_header = None
+    for path in input_paths:
+        with open(path, newline="") as fh:
+            reader = csv.reader(fh)
+            rows = list(reader)
+        if not rows:
+            continue
+        header, *body = rows
+        if seen_header is None:
+            seen_header = header
+        for row in body:
+            if len(row) != len(HEADER):
+                # skip a malformed/truncated line rather than corrupt the merge
+                print(f"  skip malformed row in {os.path.basename(path)}: {row[:2]}...", flush=True)
+                continue
+            merged[tuple(row[:key_cols])] = row
+    header = seen_header or HEADER
+    ordered = sorted(merged.values(), key=lambda r: tuple(r[:key_cols]))
+    with open(output_path, "w", newline="") as fh:
+        w = csv.writer(fh)
+        w.writerow(header)
+        w.writerows(ordered)
+    print(f"merged {len(input_paths)} files -> {output_path} ({len(ordered)} rows)", flush=True)
+
+
 def main():
     import argparse
 
@@ -845,10 +889,31 @@ def main():
         "and also refresh the stable eltwise_support_matrix.csv",
     )
     ap.add_argument("--out", default=None, help="explicit output CSV path (overrides default)")
+    ap.add_argument(
+        "--shard",
+        default=None,
+        metavar="INDEX/TOTAL",
+        help="probe only shard INDEX of TOTAL (1-based), an interleaved stride slice of "
+        "the op list so every shard covers a disjoint, balanced subset. E.g. --shard 3/10.",
+    )
+    ap.add_argument(
+        "--merge",
+        nargs="+",
+        default=None,
+        metavar="CSV",
+        help="standalone: union these shard CSVs into --out (or the stable path) and exit. "
+        "Rows are deduped by (op,dtype,layout,mem,bcast) and sorted deterministically.",
+    )
     args = ap.parse_args()
 
     if args.list_ops:
         print(" ".join(OPS))
+        return
+
+    # --merge is a standalone post-processing mode: no device, no probing.
+    if args.merge:
+        out_path = args.out or CSV_PATH
+        merge_csv_files(args.merge, out_path)
         return
 
     # resolve output path: --out wins, then --dated (per-day file), else stable default
@@ -867,7 +932,13 @@ def main():
     if mode == "w":
         w.writerow(HEADER)
     try:
-        targets = [args.op] if args.op else OPS
+        targets = [args.op] if args.op else list(OPS)
+        if args.shard and not args.op:
+            idx, total = _parse_shard(args.shard)
+            # 1-based index -> 0-based stride slice: shard i takes OPS[i-1::total],
+            # so shards are interleaved, disjoint, and together cover every op.
+            targets = targets[idx - 1 :: total]
+            print(f"shard {idx}/{total}: {len(targets)} of {len(OPS)} ops", flush=True)
         for name in targets:
             probe_one(name, w, f, device)
             print(f"  done {name}", flush=True)
