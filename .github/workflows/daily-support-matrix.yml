@@ -1,0 +1,324 @@
+name: Daily eltwise support matrix (tt-metal)
+
+# Drives a Tenstorrent eltwise support-probe run end to end, unattended:
+#   rebase our tt-metal branch on upstream main -> dispatch the 10-shard
+#   test-dispatch workflow on tt-metal hardware -> poll it to completion ->
+#   download the combined support-matrix CSV -> land it in this repo under
+#   data/workflow/ via an auto-merging PR.
+#
+# The tt-metal calls need push/workflow access to tenstorrent/tt-metal, which
+# this repo's GITHUB_TOKEN/App does not have, so they use the TT_METAL_PAT
+# secret (Aswinmcw's classic PAT, repo+workflow scopes).
+
+on:
+  schedule:
+    - cron: "30 19 * * *"   # 19:30 UTC = 01:00 IST daily -> N150
+    - cron: "30 0 * * *"    # 00:30 UTC = 06:00 IST daily -> N300
+    - cron: "30 2 * * *"    # 02:30 UTC = 08:00 IST daily -> P100a
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Hardware target for a manual run (runner + arch). Scheduled crons pick their own board."
+        type: choice
+        default: N150
+        options:
+          - N150     # wormhole_b0, tt-ubuntu-2204-N150-viommu-stable
+          - N300     # wormhole_b0, tt-ubuntu-2204-N300-viommu-stable
+          - P100a    # blackhole,   tt-ubuntu-2204-P100a-viommu-stable
+
+# Never cancel an in-flight run: it owns a viommu hardware job on tt-metal's
+# shared pool, and a scheduled run must not orphan it.
+concurrency:
+  group: daily-support-matrix
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write            # GITHUB_TOKEN files/dedupes failure & conflict issues
+
+env:
+  OUR_REPO: Aswincloud/ttnn-ops-coverage
+  TT_REPO: tenstorrent/tt-metal
+  TT_BRANCH: Aswinmcw/test_eltwise_support
+  RAW_BASE: https://raw.githubusercontent.com/Aswincloud/ttnn-ops-coverage/main
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350   # < GitHub's 6h cap; the poll deadline itself is 4h
+    steps:
+      # 0. Checkout our repo (commit base) + compute the run date.
+      - name: Checkout coverage repo
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          # Don't persist GITHUB_TOKEN as a git http.extraheader: it would
+          # override the App token we embed in the push URL for the result PR
+          # (git applies the extraheader to any github.com push), causing a 403
+          # as github-actions[bot]. All steps here authenticate explicitly.
+          persist-credentials: false
+
+      - name: Compute run date
+        id: guard
+        run: |
+          set -euo pipefail
+          # No idempotency skip: result filenames are timestamped, so multiple
+          # runs on the same day (e.g. all three scheduled boards, or a manual
+          # re-run) each produce a distinct file and never collide.
+          echo "date=$(date -u +%F)" >> "$GITHUB_OUTPUT"
+
+      # 1. Rebase the tt-metal branch onto upstream main so its build tooling
+      #    (build-artifact.yaml etc.) stays current. Conflict => file an issue,
+      #    do NOT dispatch.
+      - name: Rebase tt-metal branch on main
+        env:
+          GH_TOKEN: ${{ secrets.TT_METAL_PAT }}
+        run: |
+          set -euo pipefail
+          git config --global user.name "Aswinmcw"
+          git config --global user.email "aswin@aswincloud.com"
+          AUTH="https://x-access-token:${GH_TOKEN}@github.com/${TT_REPO}.git"
+          # tt-metal is multi-GB; blobless partial clone fetches only what a
+          # branch rebase touches.
+          git clone --filter=blob:none --no-checkout "$AUTH" ttm
+          cd ttm
+          # Record the branch's current remote SHA up front as the exact lease
+          # expectation. In a fresh blobless clone the remote-tracking ref state
+          # is unreliable for a bare --force-with-lease (it rejects with
+          # "stale info" after the local rebase), so we pin the lease to this SHA.
+          REMOTE_SHA=$(git ls-remote "$AUTH" "refs/heads/${TT_BRANCH}" | cut -f1)
+          echo "Branch remote SHA before rebase: ${REMOTE_SHA:-<none>}"
+          git fetch --no-tags origin main "${TT_BRANCH}"
+          git checkout -B "${TT_BRANCH}" "${REMOTE_SHA}"
+          if ! git rebase origin/main; then
+            git rebase --abort || true
+            echo "FAIL_KIND=rebase-conflict" >> "$GITHUB_ENV"
+            echo "::error::tt-metal branch rebase conflicted with origin/main; not dispatching."
+            exit 1
+          fi
+          # Lease pinned to the SHA we read: still aborts if someone else pushed
+          # in between (their push would change the ref off REMOTE_SHA), but works
+          # reliably in a fresh clone. No-op rebase pushes the same SHA harmlessly.
+          if ! git push --force-with-lease="${TT_BRANCH}:${REMOTE_SHA}" "$AUTH" "HEAD:${TT_BRANCH}"; then
+            echo "FAIL_KIND=rebase-push-failed" >> "$GITHUB_ENV"
+            echo "::error::Rebase succeeded but push was rejected (branch moved underneath us?)."
+            exit 1
+          fi
+          echo "✅ Rebased ${TT_BRANCH} on origin/main and pushed."
+
+      # 2. Dispatch the sharded support probe on tt-metal + correlate the run.
+      - name: Dispatch tt-metal support run
+        id: dispatch
+        env:
+          GH_TOKEN: ${{ secrets.TT_METAL_PAT }}
+        run: |
+          set -euo pipefail
+          # Snapshot the existing test-dispatch runs on our branch BEFORE
+          # dispatching, so we can identify the exact new run we create rather
+          # than trusting "newest after a timestamp" (which could latch onto a
+          # concurrent manual dispatch or a rerun on the same branch).
+          list_runs() {
+            gh run list -R "$TT_REPO" -w test-dispatch.yaml -e workflow_dispatch \
+              -b "$TT_BRANCH" -L 100 --json databaseId -q '.[].databaseId' 2>/dev/null || true
+          }
+          BEFORE_IDS=$(list_runs | sort -u)
+          # $SHARD / $SHARD_TOTAL are expanded by tt-metal's shard matrix at
+          # runtime, so they are single-quoted here (no expansion on our runner).
+          # The probe imports torch (a wheel dep, usually already present) — the
+          # install is a harmless safety net. --out names the per-shard CSV the
+          # tt-metal workflow uploads + combines.
+          CMD='set -euo pipefail
+          uv pip install torch
+          curl -fsSL '"${RAW_BASE}"'/eltwise_support_probe.py -o /work/eltwise_support_probe.py
+          cd /work && python eltwise_support_probe.py --shard "$SHARD/$SHARD_TOTAL" --out "shard-$SHARD.csv"'
+
+          # Resolve the hardware target -> (viommu runner label, tt-metal arch).
+          # On workflow_dispatch it comes from the 'target' input; on schedule
+          # it's derived from which cron fired (github.event.schedule), since
+          # scheduled events carry no inputs. These bundled viommu labels are
+          # tt-metal's only viommu tags (no standalone 'viommu' label; do NOT add
+          # 'in-service' — viommu boxes are ephemeral pods that lack it, and
+          # runs-on is AND). The label's substrings also flip test-dispatch's
+          # contains() plumbing to the viommu paths (/nohugepages, harbor image
+          # prefix, no /mnt/MLPerf). P100a is Blackhole -> arch=blackhole.
+          case "${{ github.event.schedule }}" in
+            "30 19 * * *") TARGET="N150"  ;;   # 01:00 IST
+            "30 0 * * *")  TARGET="N300"  ;;   # 06:00 IST
+            "30 2 * * *")  TARGET="P100a" ;;   # 08:00 IST
+            *)             TARGET="${{ github.event.inputs.target || 'N150' }}" ;;
+          esac
+          case "$TARGET" in
+            N150)  RUNNER_LABEL="tt-ubuntu-2204-N150-viommu-stable";  ARCH="wormhole_b0" ;;
+            N300)  RUNNER_LABEL="tt-ubuntu-2204-N300-viommu-stable";  ARCH="wormhole_b0" ;;
+            P100a) RUNNER_LABEL="tt-ubuntu-2204-P100a-viommu-stable"; ARCH="blackhole"   ;;
+            *) echo "::error::Unknown target '$TARGET'"; exit 1 ;;
+          esac
+          echo "target=$TARGET" >> "$GITHUB_OUTPUT"
+          echo "🎯 target=$TARGET runner=$RUNNER_LABEL arch=$ARCH"
+
+          # The support probe needs no profiler -> tracy=false (default build).
+          # Leave 'description' and 'commit' at their defaults (do NOT set them).
+          gh workflow run test-dispatch.yaml -R "$TT_REPO" --ref "$TT_BRANCH" \
+            -f arch="$ARCH" \
+            -f "runner-label=[\"$RUNNER_LABEL\"]" \
+            -f tracy=false \
+            -f command="$CMD"
+
+          # gh workflow run returns no id. Poll for run IDs that are NEW since
+          # our pre-dispatch snapshot (set difference). Exactly one new run is
+          # expected; if two or more appear we can't attribute the artifact
+          # safely, so fail loudly rather than commit someone else's data.
+          RUN_ID=""
+          for i in $(seq 1 18); do
+            NEW_IDS=$(comm -13 <(printf '%s\n' "$BEFORE_IDS") <(list_runs | sort -u) | grep -v '^$' || true)
+            COUNT=$(printf '%s\n' "$NEW_IDS" | grep -c . || true)
+            if [ "$COUNT" -ge 2 ]; then
+              echo "FAIL_KIND=dispatch-ambiguous" >> "$GITHUB_ENV"
+              echo "::error::Multiple new test-dispatch runs appeared on ${TT_BRANCH}; cannot attribute ours: $(printf '%s ' $NEW_IDS)"
+              exit 1
+            fi
+            if [ "$COUNT" -eq 1 ]; then RUN_ID="$NEW_IDS"; break; fi
+            sleep 10
+          done
+          if [ -z "$RUN_ID" ] || [ "$RUN_ID" = "null" ]; then
+            echo "FAIL_KIND=dispatch-not-found" >> "$GITHUB_ENV"
+            echo "::error::Dispatched but could not locate the tt-metal run."
+            exit 1
+          fi
+          echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+          echo "🚀 tt-metal run: https://github.com/${TT_REPO}/actions/runs/${RUN_ID}"
+
+      # 3. Poll the tt-metal run (build + 10 shards + combine) to completion.
+      - name: Poll tt-metal run
+        env:
+          GH_TOKEN: ${{ secrets.TT_METAL_PAT }}
+        run: |
+          set -euo pipefail
+          RUN_ID="${{ steps.dispatch.outputs.run_id }}"
+          DEADLINE=$(( $(date +%s) + 4*3600 ))   # 4h
+          while :; do
+            S=$(gh run view "$RUN_ID" -R "$TT_REPO" --json status,conclusion \
+                  -q '.status + "|" + (.conclusion // "")')
+            STATUS="${S%%|*}"; CONCL="${S##*|}"
+            echo "$(date -u +%T) status=$STATUS conclusion=$CONCL"
+            [ "$STATUS" = "completed" ] && break
+            if [ "$(date +%s)" -ge "$DEADLINE" ]; then
+              echo "FAIL_KIND=poll-timeout" >> "$GITHUB_ENV"
+              echo "::error::tt-metal run did not complete within 4h."
+              exit 1
+            fi
+            sleep 90
+          done
+          if [ "$CONCL" != "success" ]; then
+            echo "FAIL_KIND=tt-run-failed" >> "$GITHUB_ENV"
+            echo "::error::tt-metal run concluded '$CONCL'."
+            exit 1
+          fi
+
+      # 4. Download the combined support-matrix CSV artifact.
+      - name: Download combined result
+        id: download
+        env:
+          GH_TOKEN: ${{ secrets.TT_METAL_PAT }}
+        run: |
+          set -euo pipefail
+          gh run download "${{ steps.dispatch.outputs.run_id }}" -R "$TT_REPO" \
+            -n eltwise-support-matrix -D _artifact
+          SRC=$(ls _artifact/eltwise_support_matrix.csv 2>/dev/null | head -1 || true)
+          if [ -z "$SRC" ]; then
+            echo "FAIL_KIND=artifact-missing" >> "$GITHUB_ENV"
+            echo "::error::eltwise-support-matrix artifact had no eltwise_support_matrix.csv."
+            exit 1
+          fi
+          echo "src=$SRC" >> "$GITHUB_OUTPUT"
+          echo "📦 Combined result: $SRC ($(wc -c <"$SRC") bytes)"
+
+      # 5 + 6. Commit under data/workflow/ ONLY, open PR (App), approve
+      #        (WRITE_ACCESS_PAT), enable squash auto-merge (App).
+      - name: Mint App token
+        id: app
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - name: Commit result + open auto-merging PR
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}          # bot authors the PR
+          APPROVE_TOKEN: ${{ secrets.WRITE_ACCESS_PAT }}     # different identity approves
+          DATE: ${{ steps.guard.outputs.date }}
+          SRC: ${{ steps.download.outputs.src }}
+          TARGET: ${{ steps.dispatch.outputs.target }}
+        run: |
+          set -euo pipefail
+          # Segregate results by board: data/workflow/{n150,n300,p100a}/.
+          SUBDIR=$(printf '%s' "$TARGET" | tr '[:upper:]' '[:lower:]')
+          mkdir -p "data/workflow/${SUBDIR}"
+          DEST="data/workflow/${SUBDIR}/${DATE}_eltwise_support_matrix.csv"
+          cp "$SRC" "$DEST"
+          # Do NOT touch the root eltwise_support_matrix.csv, process.py, or
+          # public/data.js — the result is intentionally isolated under
+          # data/workflow/ for now (the dashboard reads the root CSV).
+
+          git config user.name "aswincloud-bot[bot]"
+          git config user.email "aswincloud-bot[bot]@users.noreply.github.com"
+          BRANCH="workflow/support-${DATE}-${{ github.run_id }}"
+          git checkout -b "$BRANCH"
+          git add "$DEST"
+          if git diff --cached --quiet; then
+            echo "Nothing to commit (identical file already present); skipping PR."
+            exit 0
+          fi
+          git commit -m "data(workflow): ${TARGET} eltwise support matrix ${DATE}"
+          git push "https://x-access-token:${GH_TOKEN}@github.com/${OUR_REPO}.git" "$BRANCH"
+
+          PR_URL=$(gh pr create -R "$OUR_REPO" --base main --head "$BRANCH" \
+            --title "data(workflow): ${TARGET} eltwise support matrix ${DATE}" \
+            --body "Automated daily tt-metal eltwise support-probe run (10-shard, ${TARGET} viommu). Data-only, isolated under \`data/workflow/${SUBDIR}/\`; does not touch the root \`eltwise_support_matrix.csv\`.")
+          echo "Opened $PR_URL"
+
+          # The membership-gated auto-approve workflow won't fire for a bot
+          # author, so approve inline with a different write identity
+          # (WRITE_ACCESS_PAT = Aswincloud-Bot, a codeowners-bypass member).
+          GH_TOKEN="$APPROVE_TOKEN" gh pr review "$PR_URL" -R "$OUR_REPO" --approve \
+            --body "Auto-approving daily support data PR (generated, isolated under data/workflow/)."
+
+          # No --delete-branch: the repo uses a merge queue, which rejects that
+          # flag ("Cannot use --delete-branch when merge queue enabled") and
+          # deletes the head branch itself on merge.
+          gh pr merge "$PR_URL" -R "$OUR_REPO" --squash --auto
+          echo "✅ Auto-merge enabled; merge queue will land it once checks pass."
+
+      # 7. On any failure, file/dedupe an issue assigned to Aswinmcw.
+      - name: File issue on failure
+        if: failure()
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const kind = process.env.FAIL_KIND || 'pipeline-failure';
+            const kindLabel = `ttnn-support/${kind}`;
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const open = await github.rest.issues.listForRepo({
+              owner: context.repo.owner, repo: context.repo.repo,
+              state: 'open', labels: kindLabel,
+            });
+            if (open.data.length > 0) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: open.data[0].number,
+                body: `Recurred ${new Date().toISOString()} — ${runUrl}`,
+              });
+              core.info(`Commented on existing issue #${open.data[0].number}`);
+            } else {
+              const detail = kind === 'rebase-conflict'
+                ? 'The tt-metal branch could not be rebased onto origin/main. **No dispatch was made** — resolve the conflict on `Aswinmcw/test_eltwise_support` manually.'
+                : `Stage: **${kind}**.`;
+              await github.rest.issues.create({
+                owner: context.repo.owner, repo: context.repo.repo,
+                title: `Daily eltwise support pipeline failed: ${kind}`,
+                labels: ['ttnn-support-pipeline', kindLabel, 'automated'],
+                assignees: ['Aswinmcw'],
+                body: `${detail}\n\nRun: ${runUrl}`,
+              });
+              core.info('Opened new failure issue.');
+            }
