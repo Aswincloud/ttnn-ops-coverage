@@ -1126,15 +1126,11 @@ function renderCompare(){
     {k:'onlyA', label:`only ${aL}`, c:'#38bdf8'},
     {k:'onlyB', label:`only ${bL}`, c:'#38bdf8'},
   ];
-  const chips=sumMeta.map(m=>{
-    const v=S[m.k]||0;
-    return `<span class="chg-chip${v?'':' zero'}"><span class="d" style="background:${m.c}"></span>${v} ${m.label}</span>`;
-  }).join('');
-
   // Every op card is its own grid, so `auto` board columns would size to each
   // card's own widest cell and drift card-to-card. Pin ONE shared width: measure
   // the widest board cell across the WHOLE payload (mono font → char count is
   // exact) and expose it as --cmp-col; the CSS tracks read it for every card.
+  // (Computed over ALL data so columns don't jump when a filter is applied.)
   const cellLen=s=>{
     if(!s) return 1;                                   // "—"
     let n=(SMETA[s.s]||SMETA.SKIP).short.length;       // status word
@@ -1146,36 +1142,81 @@ function renderCompare(){
   for(const o of (CMP.byOp||[])) for(const it of o.items)
     colCh=Math.max(colCh, cellLen(it.a), cellLen(it.b));
   const colPx=Math.ceil(colCh*6.6)+8;                  // ~6.6px/ch mono + a little air
+  body.style.setProperty('--cmp-col', colPx+'px');     // one shared board-column width for all cards
 
   // one board's outcome cell; data-b carries the board name for the narrow-screen
   // "N150: …" prefix (see the @media block in index.html).
   const side=(tag, s)=>`<span class="cmp-side" data-b="${esc(tag)}">${chgSide(s)}</span>`;
   // column header row — the board names live here ONCE, not tagged on every row.
   const head=`<div class="cmp-row cmp-hd"><span class="cfg">config</span><span class="cmp-side">${esc(aL)}</span><span class="cmp-side">${esc(bL)}</span></div>`;
-  const ops=(CMP.byOp||[]).map(o=>{
-    const rows=o.items.map(it=>{
-      const cfg=`<b>${esc(it.dt)}</b> · ${esc(it.ly)}·${esc(it.mem)}${it.bcast&&it.bcast!=='none'?'·'+esc(it.bcast):''}`;
-      return `<div class="cmp-row"><span class="cfg">${cfg}</span>${side(aL,it.a)}${side(bL,it.b)}</div>`;
-    }).join('');
-    const more=o.more?`<div class="chg-more">+${o.more} more difference${o.more>1?'s':''} in ${esc(o.op)}</div>`:'';
-    return `<div class="chg-op">
-      <div class="chg-op-h"><span class="nm">${esc(o.op)}</span><span class="mini"><i style="color:var(--faint);background:#64748b1f">${o.count} differ</i></span></div>
-      <div class="cmp-tbl">${head}${rows}</div>${more}</div>`;
-  }).join('');
 
-  const total=Object.values(S).reduce((a,b)=>a+(b||0),0);
-  body.style.setProperty('--cmp-col', colPx+'px');   // one shared board-column width for all cards
+  // --- filterable summary chips -------------------------------------------
+  // Clicking a chip toggles its kind; the list then shows only those rows.
+  // Empty set = show everything (all chips look "off", nothing is excluded).
+  const active=new Set();
+  // static shell: chips + meta + list get repainted by paint() on every toggle.
   body.innerHTML=
-    `<div class="chg-sum">${chips}</div>
-     <div class="chg-meta"><b>${total}</b> differing config${total===1?'':'s'} across <b>${(CMP.byOp||[]).length}</b> op${(CMP.byOp||[]).length===1?'':'s'} · ${esc(aL)} vs ${esc(bL)}</div>
-     <div class="chg-list">${ops||'<div class="chg-empty">The two boards agree on every config.</div>'}</div>`;
+    `<div class="chg-sum" id="cmpChips"></div>
+     <div class="chg-meta" id="cmpMeta"></div>
+     <div class="chg-list" id="cmpList"></div>`;
+  const chipsEl=$('#cmpChips'), metaEl=$('#cmpMeta'), listEl=$('#cmpList');
 
-  // hover the outcome word to see the full reason (ERR TT_FATAL / fail verdict), both sides.
-  $$('#compareBody .st-why').forEach(el=> bindTip(el, x=>{
-    let r=x.dataset.reason||'';
-    if(r.length>300) r=r.slice(0,300)+'…';
-    return `<div class="t-r">${r.replace(/</g,'&lt;')}</div>`;
-  }));
+  function paint(){
+    const kinds = active.size ? [...active] : sumMeta.map(m=>m.k);   // active, or all
+    // chips: dim zero-count (non-interactive); highlight the ones currently on.
+    chipsEl.innerHTML = sumMeta.map(m=>{
+      const v=S[m.k]||0, on=active.has(m.k);
+      return `<button type="button" class="chg-chip cmp-chip${v?'':' zero'}${on?' on':''}"`
+        + `${v?'':' disabled'} data-k="${m.k}" aria-pressed="${on}">`
+        + `<span class="d" style="background:${m.c}"></span>${v} ${esc(m.label)}</button>`;
+    }).join('');
+
+    // per-op card, restricted to the active kinds. Use o.counts for true totals
+    // (items are capped at 20 in the payload) so ">N more" stays honest.
+    const cards=(CMP.byOp||[]).map(o=>{
+      const cnt=o.counts||{};
+      const trueCount=kinds.reduce((n,k)=>n+(cnt[k]||0),0);
+      if(!trueCount) return '';                         // card has nothing in this filter
+      const items=(o.items||[]).filter(it=> active.size===0 || active.has(it.kind));
+      const rows=items.map(it=>{
+        const cfg=`<b>${esc(it.dt)}</b> · ${esc(it.ly)}·${esc(it.mem)}${it.bcast&&it.bcast!=='none'?'·'+esc(it.bcast):''}`;
+        return `<div class="cmp-row"><span class="cfg">${cfg}</span>${side(aL,it.a)}${side(bL,it.b)}</div>`;
+      }).join('');
+      const more=Math.max(0, trueCount-items.length);
+      const moreEl=more?`<div class="chg-more">+${more} more difference${more>1?'s':''} in ${esc(o.op)}</div>`:'';
+      return `<div class="chg-op">
+        <div class="chg-op-h"><span class="nm">${esc(o.op)}</span><span class="mini"><i style="color:var(--faint);background:#64748b1f">${trueCount} differ</i></span></div>
+        <div class="cmp-tbl">${head}${rows}</div>${moreEl}</div>`;
+    }).join('');
+
+    const total=kinds.reduce((n,k)=>n+(S[k]||0),0);
+    const opN=(CMP.byOp||[]).filter(o=>kinds.reduce((n,k)=>n+((o.counts||{})[k]||0),0)>0).length;
+    const filtered=active.size>0;
+    metaEl.innerHTML=`<b>${total}</b> ${filtered?'matching ':''}differing config${total===1?'':'s'} across <b>${opN}</b> op${opN===1?'':'s'} · ${esc(aL)} vs ${esc(bL)}`
+      + (filtered?` · <button type="button" class="cmp-clear" id="cmpClear">clear filter</button>`:'');
+    listEl.innerHTML= cards || `<div class="chg-empty">${filtered?'No configs match this filter.':'The two boards agree on every config.'}</div>`;
+
+    // hover the outcome word to see the full reason (ERR TT_FATAL / fail verdict), both sides.
+    listEl.querySelectorAll('.st-why').forEach(el=> bindTip(el, x=>{
+      let r=x.dataset.reason||'';
+      if(r.length>300) r=r.slice(0,300)+'…';
+      return `<div class="t-r">${r.replace(/</g,'&lt;')}</div>`;
+    }));
+  }
+
+  // toggle a chip → flip its kind in the active set → repaint.
+  chipsEl.addEventListener('click', e=>{
+    const b=e.target.closest('.cmp-chip'); if(!b || b.disabled) return;
+    const k=b.dataset.k;
+    active.has(k) ? active.delete(k) : active.add(k);
+    paint();
+  });
+  // "clear filter" link in the meta line resets to show-all.
+  body.addEventListener('click', e=>{
+    if(e.target.id==='cmpClear'){ active.clear(); paint(); }
+  });
+
+  paint();
 }
 
 (function compareModal(){

@@ -286,7 +286,9 @@ def compute_compare(board_a, csv_a, board_b, csv_b):
     except OSError:
         return None
 
-    per_op = defaultdict(lambda: {"items": [], "count": 0})
+    _KINDS = ("onlyA", "onlyB", "statusDiff", "numericDiff")
+    per_op = defaultdict(lambda: {"items": [], "count": 0,
+                                  "counts": {k: 0 for k in _KINDS}})
     summary = {"onlyA": 0, "onlyB": 0, "statusDiff": 0, "numericDiff": 0}
     for key in set(A) | set(B):
         op, dt, ly, mem, bcast = key
@@ -306,13 +308,16 @@ def compute_compare(board_a, csv_a, board_b, csv_b):
         summary[kind] += 1
         rec = per_op[op]
         rec["count"] += 1
+        rec["counts"][kind] += 1
+        # `kind` rides on each item so the front-end summary chips can filter rows.
         if len(rec["items"]) < 20:
             rec["items"].append({"dt": dt, "ly": ly, "mem": mem, "bcast": bcast,
-                                 "a": _cmp_side(a), "b": _cmp_side(b)})
+                                 "kind": kind, "a": _cmp_side(a), "b": _cmp_side(b)})
 
     by_op = []
     for op, rec in per_op.items():
-        by_op.append({"op": op, "count": rec["count"], "items": rec["items"],
+        by_op.append({"op": op, "count": rec["count"], "counts": rec["counts"],
+                      "items": rec["items"],
                       "more": max(0, rec["count"] - len(rec["items"]))})
     # most-differing ops first
     by_op.sort(key=lambda o: o["count"], reverse=True)

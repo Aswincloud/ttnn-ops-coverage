@@ -253,6 +253,13 @@ select.inp{cursor:pointer;appearance:none;background-image:url("data:image/svg+x
   background:var(--card-2);border:1px solid var(--border);border-radius:999px;padding:4px 11px}
 .chg-chip .d{width:8px;height:8px;border-radius:3px;flex:none}
 .chg-chip.zero{opacity:.4}
+/* Compare chips are clickable filters (buttons) — reset UA styling, show state. */
+.cmp-chip{cursor:pointer;font:inherit;transition:border-color var(--t),background var(--t),color var(--t)}
+.cmp-chip:not(.on):not(:disabled):hover{border-color:var(--border-hi);color:var(--text)}
+.cmp-chip.on{color:var(--text);border-color:var(--border-hi);background:#ffffff12;box-shadow:0 0 0 1px #ffffff10 inset}
+.cmp-chip.zero{cursor:default}
+.cmp-clear{font:inherit;color:var(--pcc);background:none;border:0;padding:0;cursor:pointer;text-decoration:underline dotted;text-underline-offset:2px}
+.cmp-clear:hover{text-decoration-style:solid}
 .chg-meta{font-family:var(--mono);font-size:11px;color:var(--faint);margin:2px 0 14px}
 .chg-meta b{color:var(--dim);font-weight:600}
 /* per-op groups */
