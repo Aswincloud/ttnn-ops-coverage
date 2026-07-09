@@ -14,27 +14,58 @@ import csv
 import zlib
 import math
 import subprocess
-import torch
-import ttnn
+
+# torch + ttnn are the device stack: needed to PROBE, but NOT for the standalone
+# --merge post-process (a pure-CSV union of shard outputs). Import them lazily so
+# --merge can run on a plain runner (e.g. our dashboard CI) that has neither. When
+# present, everything below behaves exactly as before; when absent, only --merge
+# is usable and any probe path raises a clear error via _require_device().
+try:
+    import torch
+    import ttnn
+except ModuleNotFoundError:
+    torch = None
+    ttnn = None
+
+
+def _require_device():
+    """Fail loudly if a probe path is reached without the torch/ttnn stack."""
+    if torch is None or ttnn is None:
+        sys.exit("error: torch/ttnn not available — this mode needs the device "
+                 "stack; only --merge works without it.")
+
 
 # fixed seed so runs are deterministic (no borderline PCC flips between runs).
 # each config is reseeded from this base + a hash of (op,dtype,layout,mem) so a
 # single-op probe matches the same row in a full run. Override with PROBE_SEED.
 _BASE_SEED = int(os.environ.get("PROBE_SEED", "0"))
-torch.manual_seed(_BASE_SEED)
+if torch is not None:
+    torch.manual_seed(_BASE_SEED)
 
 # ----------------------------------------------------------------------------- axes
-ALL_DTYPES = {
-    "bfloat16": ttnn.bfloat16,
-    "bfloat8_b": ttnn.bfloat8_b,
-    "bfloat4_b": ttnn.bfloat4_b,
-    "float32": ttnn.float32,
-    "int32": ttnn.int32,
-    "uint32": ttnn.uint32,
-    "uint16": ttnn.uint16,
-    "uint8": ttnn.uint8,
-}
-ALL_LAYOUTS = {"tile": ttnn.TILE_LAYOUT, "rm": ttnn.ROW_MAJOR_LAYOUT}
+# The ttnn-valued axis maps only matter to the probe paths; guard them so the
+# module still imports for --merge when ttnn is absent (they stay {} then).
+if ttnn is not None:
+    ALL_DTYPES = {
+        "bfloat16": ttnn.bfloat16,
+        "bfloat8_b": ttnn.bfloat8_b,
+        "bfloat4_b": ttnn.bfloat4_b,
+        "float32": ttnn.float32,
+        "int32": ttnn.int32,
+        "uint32": ttnn.uint32,
+        "uint16": ttnn.uint16,
+        "uint8": ttnn.uint8,
+    }
+    ALL_LAYOUTS = {"tile": ttnn.TILE_LAYOUT, "rm": ttnn.ROW_MAJOR_LAYOUT}
+    _SHARD_STRATEGY = {
+        "height": ttnn.ShardStrategy.HEIGHT,
+        "width": ttnn.ShardStrategy.WIDTH,
+        "block": ttnn.ShardStrategy.BLOCK,
+    }
+else:
+    ALL_DTYPES = {}
+    ALL_LAYOUTS = {}
+    _SHARD_STRATEGY = {}
 # mem axis is kept as string tokens; sharded configs are resolved per-shape at runtime
 # so they work on any hardware (see make_mem).
 ALL_MEMS = {k: k for k in ("dram", "l1", "height", "width", "block")}
@@ -49,11 +80,6 @@ PER_OP_SHAPE = {
     "geglu": (1, 1, 32, 64),
     "reglu": (1, 1, 32, 64),
     "swiglu": (1, 1, 32, 64),
-}
-_SHARD_STRATEGY = {
-    "height": ttnn.ShardStrategy.HEIGHT,
-    "width": ttnn.ShardStrategy.WIDTH,
-    "block": ttnn.ShardStrategy.BLOCK,
 }
 
 
@@ -289,7 +315,7 @@ def to_t(x):
     return ttnn.to_torch(x)
 
 
-_INT_DTYPES = (ttnn.int32, ttnn.uint32, ttnn.uint16, ttnn.uint8)
+_INT_DTYPES = (ttnn.int32, ttnn.uint32, ttnn.uint16, ttnn.uint8) if ttnn is not None else ()
 
 
 def call_golden(gf, args, device, dtype=None, kw=None):
@@ -335,7 +361,8 @@ def _corr(g, o):
 # ULP is only meaningful for float dtypes. bfloat8_b shares bfloat16's resolution
 # (block-shared exponent), so it is measured in bf16; bf4_b is too coarse to map to a
 # torch dtype, and integers have no ULP -> these report blank.
-_ULP_TORCH = {ttnn.bfloat16: torch.bfloat16, ttnn.bfloat8_b: torch.bfloat16, ttnn.float32: torch.float32}
+_ULP_TORCH = ({ttnn.bfloat16: torch.bfloat16, ttnn.bfloat8_b: torch.bfloat16, ttnn.float32: torch.float32}
+              if ttnn is not None else {})
 
 
 def _ulp_size(x):
@@ -959,6 +986,7 @@ def run_worker_all(targets, out_path, skip):
     first `skip` configs. Rows are appended and flushed one at a time so that if a config
     hard-crashes this process, everything completed before it is already on disk. The
     supervisor (parent) recreates a fresh worker/device only when that happens."""
+    _require_device()
     device = ttnn.open_device(device_id=0)
     f = open(out_path, "a", newline="")
     w = csv.writer(f)
@@ -986,6 +1014,7 @@ def run_supervised(targets, out_path, shard_spec=None):
     CRASH row and relaunch a fresh worker (fresh device) at the very next config. In the
     common no-crash case this is one device open for the entire run; k crashes cost k
     extra device reopens and never skip more than the single crashing config."""
+    _require_device()
     configs = list(iter_configs(targets))
     total = len(configs)
 
@@ -1109,6 +1138,7 @@ def main():
     if not args.op and not args.no_isolate:
         run_supervised(targets, out_path, shard_spec=args.shard)
     else:
+        _require_device()
         mode = "a" if args.op else "w"
         device = ttnn.open_device(device_id=0)
         f = open(out_path, mode, newline="")
