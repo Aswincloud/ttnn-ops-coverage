@@ -1057,51 +1057,81 @@ function renderChanges(){
   // button stays just "Changes"; the baseline date lives in the modal subtitle.
   if(label) label.textContent='Changes';
 
-  // summary chips (zeros are dimmed so the row's shape stays stable)
+  // summary chips double as filters (like Compare). `order` uses the per-item /
+  // per-op-counts key form ('shift'); the summary object stores it as 'shifted',
+  // so sval bridges the two. Filtering keys on o.counts / it.kind ('shift').
   const order=['improved','regressed','new','removed','statusChange','shift'];
   const S=C.summary;
-  // summary stores 'shifted'; the per-item kind is 'shift' — map between them
   const sval={improved:S.improved,regressed:S.regressed,new:S.new,removed:S.removed,
               statusChange:S.statusChange,shift:S.shifted};
-  const chips=order.map(k=>{
-    const m=KMETA[k], v=sval[k]||0;
-    return `<span class="chg-chip${v?'':' zero'}"><span class="d" style="background:${m.c}"></span>${v} ${m.label}</span>`;
-  }).join('');
 
-  const ops=C.byOp.map(o=>{
-    const mini=order.filter(k=>o.counts[k]).map(k=>{
-      const m=KMETA[k];
-      return `<i style="color:${m.c};background:${m.c}1f">${o.counts[k]} ${m.label}</i>`;
-    }).join('');
-    const rows=o.items.map(it=>{
-      const m=KMETA[it.kind]||KMETA.statusChange;
-      const cfg=`<b>${esc(it.dt)}</b> · ${esc(it.ly)}·${esc(it.mem)}`;
-      let mv;
-      if(it.kind==='new')          mv=`<span class="arr">+</span>${chgSide(it.to)}`;
-      else if(it.kind==='removed') mv=`${chgSide(it.from)}<span class="arr">→ ✕</span>`;
-      else                         mv=`${chgSide(it.from)}<span class="arr">→</span>${chgSide(it.to)}`;
-      return `<div class="chg-row"><span class="cfg">${cfg}</span>
-        <span class="mv"><span class="chg-kind" style="color:${m.c};background:${m.c}1f">${m.label}</span>${mv}</span></div>`;
-    }).join('');
-    const more=o.more?`<div class="chg-more">+${o.more} more change${o.more>1?'s':''} in ${esc(o.op)}</div>`:'';
-    return `<div class="chg-op">
-      <div class="chg-op-h"><span class="nm">${esc(o.op)}</span><span class="mini">${mini}</span></div>
-      <div class="chg-rows">${rows}${more}</div></div>`;
-  }).join('');
-
-  const total=order.reduce((a,k)=>a+(sval[k]||0),0);
+  // static shell; paint() repaints chips + meta + list on every filter toggle.
   body.innerHTML=
-    `<div class="chg-sum">${chips}</div>
-     <div class="chg-meta"><b>${total}</b> config change${total===1?'':'s'} across <b>${C.byOp.length}</b> op${C.byOp.length===1?'':'s'} · baseline <b>${esc(chgDate(C.baseline))}</b></div>
-     <div class="chg-list">${ops||'<div class="chg-empty">No differences from the previous run.</div>'}</div>`;
+    `<div class="chg-sum" id="chgChips"></div>
+     <div class="chg-meta" id="chgMeta"></div>
+     <div class="chg-list" id="chgList"></div>`;
+  const chipsEl=$('#chgChips'), metaEl=$('#chgMeta'), listEl=$('#chgList');
+  const active=new Set();
 
-  // hover (or tap) the outcome word (ERR / PCC / …) to see the full reason — the
-  // TT_FATAL text for a crash, or the fail verdict for a PCC fail.
-  $$('#changesBody .st-why').forEach(el=> bindTip(el, x=>{
-    let r=x.dataset.reason||'';
-    if(r.length>300) r=r.slice(0,300)+'…';
-    return `<div class="t-r">${r.replace(/</g,'&lt;')}</div>`;
-  }));
+  function paint(){
+    const kinds = active.size ? [...active] : order;      // active subset, or all
+    chipsEl.innerHTML = order.map(k=>{
+      const m=KMETA[k], v=sval[k]||0, on=active.has(k);
+      return `<button type="button" class="chg-chip is-filter${v?'':' zero'}${on?' on':''}"`
+        + `${v?'':' disabled'} data-k="${k}" aria-pressed="${on}">`
+        + `<span class="d" style="background:${m.c}"></span>${v} ${m.label}</button>`;
+    }).join('');
+
+    const ops=C.byOp.map(o=>{
+      const trueCount=kinds.reduce((n,k)=>n+(o.counts[k]||0),0);
+      if(!trueCount) return '';                            // nothing in this filter
+      const mini=order.filter(k=>o.counts[k] && (active.size===0||active.has(k))).map(k=>{
+        const m=KMETA[k];
+        return `<i style="color:${m.c};background:${m.c}1f">${o.counts[k]} ${m.label}</i>`;
+      }).join('');
+      const items=o.items.filter(it=> active.size===0 || active.has(it.kind));
+      const rows=items.map(it=>{
+        const m=KMETA[it.kind]||KMETA.statusChange;
+        const cfg=`<b>${esc(it.dt)}</b> · ${esc(it.ly)}·${esc(it.mem)}`;
+        let mv;
+        if(it.kind==='new')          mv=`<span class="arr">+</span>${chgSide(it.to)}`;
+        else if(it.kind==='removed') mv=`${chgSide(it.from)}<span class="arr">→ ✕</span>`;
+        else                         mv=`${chgSide(it.from)}<span class="arr">→</span>${chgSide(it.to)}`;
+        return `<div class="chg-row"><span class="cfg">${cfg}</span>
+          <span class="mv"><span class="chg-kind" style="color:${m.c};background:${m.c}1f">${m.label}</span>${mv}</span></div>`;
+      }).join('');
+      const more=Math.max(0, trueCount-items.length);
+      const moreEl=more?`<div class="chg-more">+${more} more change${more>1?'s':''} in ${esc(o.op)}</div>`:'';
+      return `<div class="chg-op">
+        <div class="chg-op-h"><span class="nm">${esc(o.op)}</span><span class="mini">${mini}</span></div>
+        <div class="chg-rows">${rows}${moreEl}</div></div>`;
+    }).join('');
+
+    const total=kinds.reduce((a,k)=>a+(sval[k]||0),0);
+    const opN=C.byOp.filter(o=>kinds.reduce((n,k)=>n+(o.counts[k]||0),0)>0).length;
+    const filtered=active.size>0;
+    metaEl.innerHTML=`<b>${total}</b> ${filtered?'matching ':''}config change${total===1?'':'s'} across <b>${opN}</b> op${opN===1?'':'s'} · baseline <b>${esc(chgDate(C.baseline))}</b>`
+      + (filtered?` · <button type="button" class="chg-clear" id="chgClear">clear filter</button>`:'');
+    listEl.innerHTML= ops || `<div class="chg-empty">${filtered?'No changes match this filter.':'No differences from the previous run.'}</div>`;
+
+    // hover (or tap) the outcome word (ERR / PCC / …) to see the full reason — the
+    // TT_FATAL text for a crash, or the fail verdict for a PCC fail.
+    listEl.querySelectorAll('.st-why').forEach(el=> bindTip(el, x=>{
+      let r=x.dataset.reason||'';
+      if(r.length>300) r=r.slice(0,300)+'…';
+      return `<div class="t-r">${r.replace(/</g,'&lt;')}</div>`;
+    }));
+  }
+
+  chipsEl.addEventListener('click', e=>{
+    const b=e.target.closest('.is-filter'); if(!b || b.disabled) return;
+    const k=b.dataset.k;
+    active.has(k) ? active.delete(k) : active.add(k);
+    paint();
+  });
+  body.addEventListener('click', e=>{ if(e.target.id==='chgClear'){ active.clear(); paint(); } });
+
+  paint();
 }
 
 // Cross-board Compare (N150 vs P100a). Board-agnostic, so it reads the top-level
@@ -1166,7 +1196,7 @@ function renderCompare(){
     // chips: dim zero-count (non-interactive); highlight the ones currently on.
     chipsEl.innerHTML = sumMeta.map(m=>{
       const v=S[m.k]||0, on=active.has(m.k);
-      return `<button type="button" class="chg-chip cmp-chip${v?'':' zero'}${on?' on':''}"`
+      return `<button type="button" class="chg-chip is-filter${v?'':' zero'}${on?' on':''}"`
         + `${v?'':' disabled'} data-k="${m.k}" aria-pressed="${on}">`
         + `<span class="d" style="background:${m.c}"></span>${v} ${esc(m.label)}</button>`;
     }).join('');
@@ -1193,7 +1223,7 @@ function renderCompare(){
     const opN=(CMP.byOp||[]).filter(o=>kinds.reduce((n,k)=>n+((o.counts||{})[k]||0),0)>0).length;
     const filtered=active.size>0;
     metaEl.innerHTML=`<b>${total}</b> ${filtered?'matching ':''}differing config${total===1?'':'s'} across <b>${opN}</b> op${opN===1?'':'s'} · ${esc(aL)} vs ${esc(bL)}`
-      + (filtered?` · <button type="button" class="cmp-clear" id="cmpClear">clear filter</button>`:'');
+      + (filtered?` · <button type="button" class="chg-clear" id="cmpClear">clear filter</button>`:'');
     listEl.innerHTML= cards || `<div class="chg-empty">${filtered?'No configs match this filter.':'The two boards agree on every config.'}</div>`;
 
     // hover the outcome word to see the full reason (ERR TT_FATAL / fail verdict), both sides.
@@ -1206,7 +1236,7 @@ function renderCompare(){
 
   // toggle a chip → flip its kind in the active set → repaint.
   chipsEl.addEventListener('click', e=>{
-    const b=e.target.closest('.cmp-chip'); if(!b || b.disabled) return;
+    const b=e.target.closest('.is-filter'); if(!b || b.disabled) return;
     const k=b.dataset.k;
     active.has(k) ? active.delete(k) : active.add(k);
     paint();
