@@ -1131,7 +1131,11 @@ function renderCompare(){
     return `<span class="chg-chip${v?'':' zero'}"><span class="d" style="background:${m.c}"></span>${v} ${m.label}</span>`;
   }).join('');
 
-  const side=(tag, s)=>`<span class="cmp-side"><span class="cmp-b">${esc(tag)}</span>${chgSide(s)}</span>`;
+  // one board's outcome cell; data-b carries the board name for the narrow-screen
+  // "N150: …" prefix (see the @media block in index.html).
+  const side=(tag, s)=>`<span class="cmp-side" data-b="${esc(tag)}">${chgSide(s)}</span>`;
+  // column header row — the board names live here ONCE, not tagged on every row.
+  const head=`<div class="cmp-row cmp-hd"><span class="cfg">config</span><span class="cmp-side">${esc(aL)}</span><span class="cmp-side">${esc(bL)}</span></div>`;
   const ops=(CMP.byOp||[]).map(o=>{
     const rows=o.items.map(it=>{
       const cfg=`<b>${esc(it.dt)}</b> · ${esc(it.ly)}·${esc(it.mem)}${it.bcast&&it.bcast!=='none'?'·'+esc(it.bcast):''}`;
@@ -1140,7 +1144,7 @@ function renderCompare(){
     const more=o.more?`<div class="chg-more">+${o.more} more difference${o.more>1?'s':''} in ${esc(o.op)}</div>`:'';
     return `<div class="chg-op">
       <div class="chg-op-h"><span class="nm">${esc(o.op)}</span><span class="mini"><i style="color:var(--faint);background:#64748b1f">${o.count} differ</i></span></div>
-      <div class="chg-rows">${rows}${more}</div></div>`;
+      <div class="cmp-tbl">${head}${rows}</div>${more}</div>`;
   }).join('');
 
   const total=Object.values(S).reduce((a,b)=>a+(b||0),0);

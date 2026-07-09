@@ -277,17 +277,30 @@ select.inp{cursor:pointer;appearance:none;background-image:url("data:image/svg+x
 .chg-more{font-family:var(--mono);font-size:10.5px;color:var(--faint);padding:7px 12px;border-top:1px solid var(--border)}
 .chg-kind{font-style:normal;font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding:1px 6px;border-radius:5px;flex:none}
 
-/* ---------- cross-board compare rows (config | side A | side B) ---------- */
-.cmp-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:6px 14px;align-items:center;padding:7px 12px;font-family:var(--mono);font-size:11px}
+/* ---------- cross-board compare table (config | board A | board B) ----------
+   ONE grid owns the 3 columns; the header + every row inherit those exact tracks
+   via `subgrid`, so all cells line up vertically (an independent grid per row
+   would size each row's columns to its own content and misalign). */
+.cmp-tbl{display:grid;grid-template-columns:minmax(0,1fr) minmax(92px,auto) minmax(92px,auto);align-items:center;font-family:var(--mono);font-size:11px}
+.cmp-row{display:grid;grid-column:1/-1;grid-template-columns:subgrid;align-items:center;gap:4px 16px;padding:7px 12px}
 .cmp-row+.cmp-row{border-top:1px solid var(--border)}
+/* header row: reuses .cmp-row's subgrid tracks so labels sit over their columns */
+.cmp-hd,.cmp-hd .cmp-side{font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--faint)}
+.cmp-hd{border-bottom:1px solid var(--border)}
+.cmp-hd+.cmp-row{border-top:0}
 .cmp-row .cfg{color:var(--faint);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .cmp-row .cfg b{color:var(--dim);font-weight:600}
-.cmp-side{display:flex;align-items:center;gap:6px;justify-self:end;white-space:nowrap}
-.cmp-side .cmp-b{font-size:9px;font-weight:700;letter-spacing:.04em;color:var(--faint);background:var(--card-2);border:1px solid var(--border);border-radius:5px;padding:1px 5px}
+.cmp-side{display:flex;align-items:center;gap:6px;white-space:nowrap;min-width:0}
 .cmp-side .st{font-weight:700}
 .cmp-side .st-why{text-decoration:underline dotted currentColor;text-underline-offset:2px;cursor:help}
 .cmp-side .num{color:var(--faint);font-size:10px}
-@media(max-width:560px){.cmp-row{grid-template-columns:1fr;gap:4px}.cmp-side{justify-self:start}}
+/* narrow screens: stack; the header hides and each side prefixes its board name */
+@media(max-width:560px){
+  .cmp-tbl{grid-template-columns:1fr}
+  .cmp-hd{display:none}
+  .cmp-row{grid-template-columns:1fr;grid-column:auto;gap:2px 0;padding:8px 12px}
+  .cmp-side::before{content:attr(data-b)":\00a0";color:var(--faint);font-size:9px;font-weight:700;letter-spacing:.04em}
+}
 
 /* ---------- kpi ---------- */
 .kpis{display:grid;grid-template-columns:repeat(var(--kpi-cols,6),1fr);gap:13px;margin-bottom:18px}
