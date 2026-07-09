@@ -3,9 +3,10 @@ name: Daily eltwise support matrix (tt-metal)
 # Drives a Tenstorrent eltwise support-probe run end to end, unattended:
 #   rebase our tt-metal branch on upstream main -> dispatch ONE test-dispatch
 #   run that fans out to 2 boards x 10 shards off a single build -> poll it to
-#   completion -> download the 2 per-board combined support-matrix CSVs
-#   -> land each as the board's root eltwise_support_matrix_<board>.csv (the
-#   dashboard source) + a dated history/workflow/ copy, via one auto-merging PR.
+#   completion -> download the 20 raw shard CSVs and merge each board's 10 shards
+#   locally (tt-metal uploads raw shards; we do the merge) -> land each as the
+#   board's root eltwise_support_matrix_<board>.csv (the dashboard source) + a
+#   dated history/workflow/ copy, via one auto-merging PR.
 #
 # The tt-metal calls need push/workflow access to tenstorrent/tt-metal, which
 # this repo's GITHUB_TOKEN/App does not have, so they use the TT_METAL_PAT
@@ -121,7 +122,8 @@ jobs:
           # runtime, so they are single-quoted here (no expansion on our runner).
           # The probe imports torch (a wheel dep, usually already present) — the
           # install is a harmless safety net. --out names the per-shard CSV the
-          # tt-metal workflow uploads + combines.
+          # tt-metal workflow uploads as an artifact; we merge the shards locally
+          # (step 4) rather than in a tt-metal combine job.
           CMD='set -euo pipefail
           uv pip install torch
           curl -fsSL '"${RAW_BASE}"'/eltwise_support_probe.py -o /work/eltwise_support_probe.py
@@ -162,7 +164,7 @@ jobs:
           echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
           echo "🚀 tt-metal run: https://github.com/${TT_REPO}/actions/runs/${RUN_ID}"
 
-      # 3. Poll the tt-metal run (build + 20 cells + 2 combines) to completion.
+      # 3. Poll the tt-metal run (build + 20 shard cells) to completion.
       - name: Poll tt-metal run
         env:
           GH_TOKEN: ${{ secrets.TT_METAL_PAT }}
@@ -189,8 +191,13 @@ jobs:
             exit 1
           fi
 
-      # 4. Download the 2 per-board combined support-matrix CSV artifacts.
-      - name: Download combined results
+      # 4. Download the 20 per-board SHARD CSVs and merge each board's 10 shards
+      #    locally. tt-metal only produces raw shards now — the merge lives HERE,
+      #    using the eltwise_support_probe.py already checked out in this repo (no
+      #    raw.githubusercontent curl -> no 429 that a parallel-combine job on
+      #    tt-metal used to hit). --merge is a device-free stdlib post-process; its
+      #    --out writes exactly the eltwise_support_matrix.csv the commit step reads.
+      - name: Download shards + merge results
         id: download
         env:
           GH_TOKEN: ${{ secrets.TT_METAL_PAT }}
@@ -198,15 +205,29 @@ jobs:
           set -euo pipefail
           RUN_ID="${{ steps.dispatch.outputs.run_id }}"
           for HW in $BOARDS; do
+            mkdir -p "_artifact/${HW}/shards"
+            # One call grabs all 10 shard artifacts for this board; the trailing
+            # "-" + glob keeps N150 and P100a shards separate (…-N150-* matches
+            # …-N150-1 … …-N150-10, not the other board). Each extracts into its
+            # own subdir, so glob recursively.
             gh run download "$RUN_ID" -R "$TT_REPO" \
-              -n "eltwise-support-matrix-${HW}" -D "_artifact/${HW}"
-            SRC=$(ls _artifact/${HW}/eltwise_support_matrix.csv 2>/dev/null | head -1 || true)
-            if [ -z "$SRC" ]; then
+              -p "eltwise-support-shard-${HW}-*" -D "_artifact/${HW}/shards"
+            mapfile -t SHARDS < <(find "_artifact/${HW}/shards" -name 'shard-*.csv' | sort)
+            if [ "${#SHARDS[@]}" -lt 10 ]; then
               echo "FAIL_KIND=artifact-missing" >> "$GITHUB_ENV"
-              echo "::error::eltwise-support-matrix-${HW} artifact had no eltwise_support_matrix.csv."
+              echo "::error::${HW}: found ${#SHARDS[@]} shard CSV(s), expected 10."
               exit 1
             fi
-            echo "📦 ${HW}: $SRC ($(wc -c <"$SRC") bytes)"
+            # --out writes the combined CSV where the commit step globs it.
+            python3 eltwise_support_probe.py --merge "${SHARDS[@]}" \
+              --out "_artifact/${HW}/eltwise_support_matrix.csv"
+            SRC=$(ls _artifact/${HW}/eltwise_support_matrix.csv 2>/dev/null | head -1 || true)
+            if [ -z "$SRC" ] || [ ! -s "$SRC" ]; then
+              echo "FAIL_KIND=merge-failed" >> "$GITHUB_ENV"
+              echo "::error::${HW}: merge produced no/empty eltwise_support_matrix.csv."
+              exit 1
+            fi
+            echo "📦 ${HW}: merged ${#SHARDS[@]} shards -> $SRC ($(wc -c <"$SRC") bytes)"
           done
 
       # 5 + 6. Commit both boards under data/workflow/<hw>/ in ONE PR (App
