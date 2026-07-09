@@ -206,7 +206,9 @@ def compute_changes(board, root_csv):
 
     per_op = defaultdict(lambda: {"items": [], "counts": Counter()})
     SUM = base["summary"]
-    for key in set(cur) | set(prev):
+    # sorted() so the per-op sample (capped at 20) is deterministic across runs —
+    # set iteration order depends on hash seeding and would otherwise churn data.js.
+    for key in sorted(set(cur) | set(prev)):
         op, dt, ly, mem, bcast = key
         a, b = prev.get(key), cur.get(key)
         if a is None:
@@ -290,7 +292,9 @@ def compute_compare(board_a, csv_a, board_b, csv_b):
     per_op = defaultdict(lambda: {"items": [], "count": 0,
                                   "counts": {k: 0 for k in _KINDS}})
     summary = {"onlyA": 0, "onlyB": 0, "statusDiff": 0, "numericDiff": 0}
-    for key in set(A) | set(B):
+    # sorted() so the per-op sample (capped at 20) is deterministic across runs —
+    # set iteration order depends on hash seeding and would otherwise churn data.js.
+    for key in sorted(set(A) | set(B)):
         op, dt, ly, mem, bcast = key
         a, b = A.get(key), B.get(key)
         if a is None:

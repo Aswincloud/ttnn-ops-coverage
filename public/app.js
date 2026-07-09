@@ -1119,7 +1119,7 @@ function renderChanges(){
     listEl.querySelectorAll('.st-why').forEach(el=> bindTip(el, x=>{
       let r=x.dataset.reason||'';
       if(r.length>300) r=r.slice(0,300)+'…';
-      return `<div class="t-r">${r.replace(/</g,'&lt;')}</div>`;
+      return `<div class="t-r">${esc(r)}</div>`;   // esc() handles & < > (not just <)
     }));
   }
 
@@ -1230,7 +1230,7 @@ function renderCompare(){
     listEl.querySelectorAll('.st-why').forEach(el=> bindTip(el, x=>{
       let r=x.dataset.reason||'';
       if(r.length>300) r=r.slice(0,300)+'…';
-      return `<div class="t-r">${r.replace(/</g,'&lt;')}</div>`;
+      return `<div class="t-r">${esc(r)}</div>`;   // esc() handles & < > (not just <)
     }));
   }
 
