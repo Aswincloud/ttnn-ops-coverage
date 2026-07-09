@@ -1104,6 +1104,91 @@ function renderChanges(){
   }));
 }
 
+// Cross-board Compare (N150 vs P100a). Board-agnostic, so it reads the top-level
+// RAW.compare payload (NOT the active board's D). When absent — a single-board
+// build — hide the button and bail. Neutral both-ways: each differing config shows
+// both boards' outcomes side by side via chgSide(), no improved/regressed framing.
+function renderCompare(){
+  const CMP = RAW.compare, body=$('#compareBody'), sub=$('#compareSub');
+  const openBtn=$('#compareOpen'), title=$('#compareTitle');
+  if(!CMP || !openBtn){ if(openBtn) openBtn.hidden=true; return; }
+  openBtn.hidden=false;
+  const aL=CMP.aLabel||CMP.a, bL=CMP.bLabel||CMP.b;
+  if(title) title.textContent=`${aL} vs ${bL}`;
+  if(sub) sub.textContent=`Configs that behave differently on ${aL} vs ${bL} (current data).`;
+  if(!body) return;
+
+  const S=CMP.summary||{};
+  // summary chips: only-on-one-board + status differs + numeric move
+  const sumMeta=[
+    {k:'statusDiff',  label:'status differs', c:'#a78bfa'},
+    {k:'numericDiff', label:'numeric move',   c:'#f59e0b'},
+    {k:'onlyA', label:`only ${aL}`, c:'#38bdf8'},
+    {k:'onlyB', label:`only ${bL}`, c:'#38bdf8'},
+  ];
+  const chips=sumMeta.map(m=>{
+    const v=S[m.k]||0;
+    return `<span class="chg-chip${v?'':' zero'}"><span class="d" style="background:${m.c}"></span>${v} ${m.label}</span>`;
+  }).join('');
+
+  const side=(tag, s)=>`<span class="cmp-side"><span class="cmp-b">${esc(tag)}</span>${chgSide(s)}</span>`;
+  const ops=(CMP.byOp||[]).map(o=>{
+    const rows=o.items.map(it=>{
+      const cfg=`<b>${esc(it.dt)}</b> · ${esc(it.ly)}·${esc(it.mem)}${it.bcast&&it.bcast!=='none'?'·'+esc(it.bcast):''}`;
+      return `<div class="cmp-row"><span class="cfg">${cfg}</span>${side(aL,it.a)}${side(bL,it.b)}</div>`;
+    }).join('');
+    const more=o.more?`<div class="chg-more">+${o.more} more difference${o.more>1?'s':''} in ${esc(o.op)}</div>`:'';
+    return `<div class="chg-op">
+      <div class="chg-op-h"><span class="nm">${esc(o.op)}</span><span class="mini"><i style="color:var(--faint);background:#64748b1f">${o.count} differ</i></span></div>
+      <div class="chg-rows">${rows}${more}</div></div>`;
+  }).join('');
+
+  const total=Object.values(S).reduce((a,b)=>a+(b||0),0);
+  body.innerHTML=
+    `<div class="chg-sum">${chips}</div>
+     <div class="chg-meta"><b>${total}</b> differing config${total===1?'':'s'} across <b>${(CMP.byOp||[]).length}</b> op${(CMP.byOp||[]).length===1?'':'s'} · ${esc(aL)} vs ${esc(bL)}</div>
+     <div class="chg-list">${ops||'<div class="chg-empty">The two boards agree on every config.</div>'}</div>`;
+
+  // hover the outcome word to see the full reason (ERR TT_FATAL / fail verdict), both sides.
+  $$('#compareBody .st-why').forEach(el=> bindTip(el, x=>{
+    let r=x.dataset.reason||'';
+    if(r.length>300) r=r.slice(0,300)+'…';
+    return `<div class="t-r">${r.replace(/</g,'&lt;')}</div>`;
+  }));
+}
+
+(function compareModal(){
+  const overlay=$('#compareOverlay'); if(!overlay) return;
+  const openBtn=$('#compareOpen'), closeEls=[$('#compareClose')];
+  let lastFocus=null;
+  function open(){
+    lastFocus=document.activeElement;
+    overlay.hidden=false; document.body.style.overflow='hidden';
+    addEventListener('keydown',onKey);
+    setTimeout(()=>{ const x=$('#compareClose'); x&&x.focus(); },40);
+  }
+  function close(){
+    overlay.hidden=true; document.body.style.overflow='';
+    removeEventListener('keydown',onKey);
+    if(lastFocus&&lastFocus.focus) lastFocus.focus();
+  }
+  function onKey(e){
+    if(e.key==='Escape'){ e.preventDefault(); close(); }
+    if(e.key==='Tab') trapTab(e);
+  }
+  function trapTab(e){
+    const f=overlay.querySelectorAll('button,input,select,textarea,a[href]');
+    const vis=[...f].filter(el=>!el.disabled&&el.offsetParent!==null);
+    if(!vis.length) return;
+    const first=vis[0], last=vis[vis.length-1];
+    if(e.shiftKey&&document.activeElement===first){ e.preventDefault(); last.focus(); }
+    else if(!e.shiftKey&&document.activeElement===last){ e.preventDefault(); first.focus(); }
+  }
+  openBtn&&openBtn.addEventListener('click',open);
+  closeEls.forEach(el=>el&&el.addEventListener('click',close));
+  overlay.addEventListener('mousedown',e=>{ if(e.target===overlay) close(); });
+})();
+
 (function changesModal(){
   const overlay=$('#changesOverlay'); if(!overlay) return;
   const openBtn=$('#changesOpen'), closeEls=[$('#changesClose')];
@@ -1244,6 +1329,7 @@ renderErr();
 renderSnapshot();
 renderUlp();
 renderChanges();
+renderCompare();
 renderChips();
 renderHead();
 renderTable();

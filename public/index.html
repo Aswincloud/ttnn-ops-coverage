@@ -277,6 +277,18 @@ select.inp{cursor:pointer;appearance:none;background-image:url("data:image/svg+x
 .chg-more{font-family:var(--mono);font-size:10.5px;color:var(--faint);padding:7px 12px;border-top:1px solid var(--border)}
 .chg-kind{font-style:normal;font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding:1px 6px;border-radius:5px;flex:none}
 
+/* ---------- cross-board compare rows (config | side A | side B) ---------- */
+.cmp-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:6px 14px;align-items:center;padding:7px 12px;font-family:var(--mono);font-size:11px}
+.cmp-row+.cmp-row{border-top:1px solid var(--border)}
+.cmp-row .cfg{color:var(--faint);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cmp-row .cfg b{color:var(--dim);font-weight:600}
+.cmp-side{display:flex;align-items:center;gap:6px;justify-self:end;white-space:nowrap}
+.cmp-side .cmp-b{font-size:9px;font-weight:700;letter-spacing:.04em;color:var(--faint);background:var(--card-2);border:1px solid var(--border);border-radius:5px;padding:1px 5px}
+.cmp-side .st{font-weight:700}
+.cmp-side .st-why{text-decoration:underline dotted currentColor;text-underline-offset:2px;cursor:help}
+.cmp-side .num{color:var(--faint);font-size:10px}
+@media(max-width:560px){.cmp-row{grid-template-columns:1fr;gap:4px}.cmp-side{justify-self:start}}
+
 /* ---------- kpi ---------- */
 .kpis{display:grid;grid-template-columns:repeat(var(--kpi-cols,6),1fr);gap:13px;margin-bottom:18px}
 .kpi{
@@ -569,6 +581,14 @@ footer a{color:var(--dim);text-decoration:none;border-bottom:1px dotted #3a4d6e}
         <circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><path d="M11 18H8a2 2 0 0 1-2-2V9"/></svg>
       <span class="st-label" id="changesLabel">Changes</span>
     </button>
+    <!-- Cross-board Compare: only shown by app.js when data.js carries a `compare`
+         payload (i.e. >=2 boards present). Diffs N150 vs P100a for the current data. -->
+    <button class="suggest-btn" id="compareOpen" type="button" aria-haspopup="dialog" hidden
+            title="Compare N150 vs P100a — configs that behave differently across the two boards">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <rect x="3" y="4" width="7" height="16" rx="1.5"/><rect x="14" y="4" width="7" height="16" rx="1.5"/><path d="M12 3v18"/></svg>
+      <span class="st-label" id="compareLabel">Compare</span>
+    </button>
     <button class="suggest-btn" id="suggestOpen" type="button" aria-haspopup="dialog"
             title="Send a suggestion, report a result mismatch, or flag a bug">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -698,6 +718,25 @@ footer a{color:var(--dim);text-decoration:none;border-bottom:1px dotted #3a4d6e}
       </div>
     </div>
     <div id="changesBody"></div>
+  </div>
+</div>
+
+<!-- Cross-board Compare modal (N150 vs P100a) — reuses the .chg-* + .modal-* styles -->
+<div class="modal-overlay" id="compareOverlay" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="compareTitle">
+    <button class="modal-x" id="compareClose" type="button" aria-label="Close">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+    </button>
+    <div class="modal-head">
+      <div class="modal-ico">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="7" height="16" rx="1.5"/><rect x="14" y="4" width="7" height="16" rx="1.5"/><path d="M12 3v18"/></svg>
+      </div>
+      <div>
+        <h2 id="compareTitle">N150 vs P100a</h2>
+        <p class="modal-sub" id="compareSub">Configs that behave differently on the two boards.</p>
+      </div>
+    </div>
+    <div id="compareBody"></div>
   </div>
 </div>
 
