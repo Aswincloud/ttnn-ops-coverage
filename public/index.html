@@ -281,7 +281,10 @@ select.inp{cursor:pointer;appearance:none;background-image:url("data:image/svg+x
    ONE grid owns the 3 columns; the header + every row inherit those exact tracks
    via `subgrid`, so all cells line up vertically (an independent grid per row
    would size each row's columns to its own content and misalign). */
-.cmp-tbl{display:grid;grid-template-columns:minmax(0,1fr) minmax(92px,auto) minmax(92px,auto);align-items:center;font-family:var(--mono);font-size:11px}
+/* --cmp-col is set once by renderCompare() to the widest board cell in the whole
+   payload, so every op card's two board columns share ONE width (subgrid only
+   aligns within a card, not across them). config = 1fr absorbs the slack. */
+.cmp-tbl{display:grid;grid-template-columns:minmax(0,1fr) var(--cmp-col,96px) var(--cmp-col,96px);align-items:center;font-family:var(--mono);font-size:11px}
 .cmp-row{display:grid;grid-column:1/-1;grid-template-columns:subgrid;align-items:center;gap:4px 16px;padding:7px 12px}
 .cmp-row+.cmp-row{border-top:1px solid var(--border)}
 /* header row: reuses .cmp-row's subgrid tracks so labels sit over their columns */

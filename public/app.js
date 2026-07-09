@@ -1131,6 +1131,22 @@ function renderCompare(){
     return `<span class="chg-chip${v?'':' zero'}"><span class="d" style="background:${m.c}"></span>${v} ${m.label}</span>`;
   }).join('');
 
+  // Every op card is its own grid, so `auto` board columns would size to each
+  // card's own widest cell and drift card-to-card. Pin ONE shared width: measure
+  // the widest board cell across the WHOLE payload (mono font → char count is
+  // exact) and expose it as --cmp-col; the CSS tracks read it for every card.
+  const cellLen=s=>{
+    if(!s) return 1;                                   // "—"
+    let n=(SMETA[s.s]||SMETA.SKIP).short.length;       // status word
+    if(s.pcc!=null) n+=('  pcc '+(+s.pcc).toFixed(3)).length;
+    if(s.ulp!=null) n+=('  ulp '+(+s.ulp).toFixed(s.ulp<10?2:0)).length;
+    return n;
+  };
+  let colCh=Math.max(aL.length, bL.length);            // header labels also live in these columns
+  for(const o of (CMP.byOp||[])) for(const it of o.items)
+    colCh=Math.max(colCh, cellLen(it.a), cellLen(it.b));
+  const colPx=Math.ceil(colCh*6.6)+8;                  // ~6.6px/ch mono + a little air
+
   // one board's outcome cell; data-b carries the board name for the narrow-screen
   // "N150: …" prefix (see the @media block in index.html).
   const side=(tag, s)=>`<span class="cmp-side" data-b="${esc(tag)}">${chgSide(s)}</span>`;
@@ -1148,6 +1164,7 @@ function renderCompare(){
   }).join('');
 
   const total=Object.values(S).reduce((a,b)=>a+(b||0),0);
+  body.style.setProperty('--cmp-col', colPx+'px');   // one shared board-column width for all cards
   body.innerHTML=
     `<div class="chg-sum">${chips}</div>
      <div class="chg-meta"><b>${total}</b> differing config${total===1?'':'s'} across <b>${(CMP.byOp||[]).length}</b> op${(CMP.byOp||[]).length===1?'':'s'} · ${esc(aL)} vs ${esc(bL)}</div>
