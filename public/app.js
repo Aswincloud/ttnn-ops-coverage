@@ -1057,52 +1057,229 @@ function renderChanges(){
   // button stays just "Changes"; the baseline date lives in the modal subtitle.
   if(label) label.textContent='Changes';
 
-  // summary chips (zeros are dimmed so the row's shape stays stable)
+  // summary chips double as filters (like Compare). `order` uses the per-item /
+  // per-op-counts key form ('shift'); the summary object stores it as 'shifted',
+  // so sval bridges the two. Filtering keys on o.counts / it.kind ('shift').
   const order=['improved','regressed','new','removed','statusChange','shift'];
   const S=C.summary;
-  // summary stores 'shifted'; the per-item kind is 'shift' — map between them
   const sval={improved:S.improved,regressed:S.regressed,new:S.new,removed:S.removed,
               statusChange:S.statusChange,shift:S.shifted};
-  const chips=order.map(k=>{
-    const m=KMETA[k], v=sval[k]||0;
-    return `<span class="chg-chip${v?'':' zero'}"><span class="d" style="background:${m.c}"></span>${v} ${m.label}</span>`;
-  }).join('');
 
-  const ops=C.byOp.map(o=>{
-    const mini=order.filter(k=>o.counts[k]).map(k=>{
-      const m=KMETA[k];
-      return `<i style="color:${m.c};background:${m.c}1f">${o.counts[k]} ${m.label}</i>`;
-    }).join('');
-    const rows=o.items.map(it=>{
-      const m=KMETA[it.kind]||KMETA.statusChange;
-      const cfg=`<b>${esc(it.dt)}</b> · ${esc(it.ly)}·${esc(it.mem)}`;
-      let mv;
-      if(it.kind==='new')          mv=`<span class="arr">+</span>${chgSide(it.to)}`;
-      else if(it.kind==='removed') mv=`${chgSide(it.from)}<span class="arr">→ ✕</span>`;
-      else                         mv=`${chgSide(it.from)}<span class="arr">→</span>${chgSide(it.to)}`;
-      return `<div class="chg-row"><span class="cfg">${cfg}</span>
-        <span class="mv"><span class="chg-kind" style="color:${m.c};background:${m.c}1f">${m.label}</span>${mv}</span></div>`;
-    }).join('');
-    const more=o.more?`<div class="chg-more">+${o.more} more change${o.more>1?'s':''} in ${esc(o.op)}</div>`:'';
-    return `<div class="chg-op">
-      <div class="chg-op-h"><span class="nm">${esc(o.op)}</span><span class="mini">${mini}</span></div>
-      <div class="chg-rows">${rows}${more}</div></div>`;
-  }).join('');
-
-  const total=order.reduce((a,k)=>a+(sval[k]||0),0);
+  // static shell; paint() repaints chips + meta + list on every filter toggle.
   body.innerHTML=
-    `<div class="chg-sum">${chips}</div>
-     <div class="chg-meta"><b>${total}</b> config change${total===1?'':'s'} across <b>${C.byOp.length}</b> op${C.byOp.length===1?'':'s'} · baseline <b>${esc(chgDate(C.baseline))}</b></div>
-     <div class="chg-list">${ops||'<div class="chg-empty">No differences from the previous run.</div>'}</div>`;
+    `<div class="chg-sum" id="chgChips"></div>
+     <div class="chg-meta" id="chgMeta"></div>
+     <div class="chg-list" id="chgList"></div>`;
+  const chipsEl=$('#chgChips'), metaEl=$('#chgMeta'), listEl=$('#chgList');
+  const active=new Set();
 
-  // hover (or tap) the outcome word (ERR / PCC / …) to see the full reason — the
-  // TT_FATAL text for a crash, or the fail verdict for a PCC fail.
-  $$('#changesBody .st-why').forEach(el=> bindTip(el, x=>{
-    let r=x.dataset.reason||'';
-    if(r.length>300) r=r.slice(0,300)+'…';
-    return `<div class="t-r">${r.replace(/</g,'&lt;')}</div>`;
-  }));
+  function paint(){
+    const kinds = active.size ? [...active] : order;      // active subset, or all
+    chipsEl.innerHTML = order.map(k=>{
+      const m=KMETA[k], v=sval[k]||0, on=active.has(k);
+      return `<button type="button" class="chg-chip is-filter${v?'':' zero'}${on?' on':''}"`
+        + `${v?'':' disabled'} data-k="${k}" aria-pressed="${on}">`
+        + `<span class="d" style="background:${m.c}"></span>${v} ${m.label}</button>`;
+    }).join('');
+
+    const ops=C.byOp.map(o=>{
+      const trueCount=kinds.reduce((n,k)=>n+(o.counts[k]||0),0);
+      if(!trueCount) return '';                            // nothing in this filter
+      const mini=order.filter(k=>o.counts[k] && (active.size===0||active.has(k))).map(k=>{
+        const m=KMETA[k];
+        return `<i style="color:${m.c};background:${m.c}1f">${o.counts[k]} ${m.label}</i>`;
+      }).join('');
+      const items=o.items.filter(it=> active.size===0 || active.has(it.kind));
+      const rows=items.map(it=>{
+        const m=KMETA[it.kind]||KMETA.statusChange;
+        const cfg=`<b>${esc(it.dt)}</b> · ${esc(it.ly)}·${esc(it.mem)}`;
+        let mv;
+        if(it.kind==='new')          mv=`<span class="arr">+</span>${chgSide(it.to)}`;
+        else if(it.kind==='removed') mv=`${chgSide(it.from)}<span class="arr">→ ✕</span>`;
+        else                         mv=`${chgSide(it.from)}<span class="arr">→</span>${chgSide(it.to)}`;
+        return `<div class="chg-row"><span class="cfg">${cfg}</span>
+          <span class="mv"><span class="chg-kind" style="color:${m.c};background:${m.c}1f">${m.label}</span>${mv}</span></div>`;
+      }).join('');
+      const more=Math.max(0, trueCount-items.length);
+      const moreEl=more?`<div class="chg-more">+${more} more change${more>1?'s':''} in ${esc(o.op)}</div>`:'';
+      return `<div class="chg-op">
+        <div class="chg-op-h"><span class="nm">${esc(o.op)}</span><span class="mini">${mini}</span></div>
+        <div class="chg-rows">${rows}${moreEl}</div></div>`;
+    }).join('');
+
+    const total=kinds.reduce((a,k)=>a+(sval[k]||0),0);
+    const opN=C.byOp.filter(o=>kinds.reduce((n,k)=>n+(o.counts[k]||0),0)>0).length;
+    const filtered=active.size>0;
+    metaEl.innerHTML=`<b>${total}</b> ${filtered?'matching ':''}config change${total===1?'':'s'} across <b>${opN}</b> op${opN===1?'':'s'} · baseline <b>${esc(chgDate(C.baseline))}</b>`
+      + (filtered?` · <button type="button" class="chg-clear" id="chgClear">clear filter</button>`:'');
+    listEl.innerHTML= ops || `<div class="chg-empty">${filtered?'No changes match this filter.':'No differences from the previous run.'}</div>`;
+
+    // hover (or tap) the outcome word (ERR / PCC / …) to see the full reason — the
+    // TT_FATAL text for a crash, or the fail verdict for a PCC fail.
+    listEl.querySelectorAll('.st-why').forEach(el=> bindTip(el, x=>{
+      let r=x.dataset.reason||'';
+      if(r.length>300) r=r.slice(0,300)+'…';
+      return `<div class="t-r">${esc(r)}</div>`;   // esc() handles & < > (not just <)
+    }));
+  }
+
+  chipsEl.addEventListener('click', e=>{
+    const b=e.target.closest('.is-filter'); if(!b || b.disabled) return;
+    const k=b.dataset.k;
+    active.has(k) ? active.delete(k) : active.add(k);
+    paint();
+  });
+  body.addEventListener('click', e=>{ if(e.target.id==='chgClear'){ active.clear(); paint(); } });
+
+  paint();
 }
+
+// Cross-board Compare (N150 vs P100a). Board-agnostic, so it reads the top-level
+// RAW.compare payload (NOT the active board's D). When absent — a single-board
+// build — hide the button and bail. Neutral both-ways: each differing config shows
+// both boards' outcomes side by side via chgSide(), no improved/regressed framing.
+function renderCompare(){
+  const CMP = RAW.compare, body=$('#compareBody'), sub=$('#compareSub');
+  const openBtn=$('#compareOpen'), title=$('#compareTitle');
+  if(!CMP || !openBtn){ if(openBtn) openBtn.hidden=true; return; }
+  openBtn.hidden=false;
+  const aL=CMP.aLabel||CMP.a, bL=CMP.bLabel||CMP.b;
+  if(title) title.textContent=`${aL} vs ${bL}`;
+  if(sub) sub.textContent=`Configs that behave differently on ${aL} vs ${bL} (current data).`;
+  if(!body) return;
+
+  const S=CMP.summary||{};
+  // summary chips: only-on-one-board + status differs + numeric move
+  const sumMeta=[
+    {k:'statusDiff',  label:'status differs', c:'#a78bfa'},
+    {k:'numericDiff', label:'numeric move',   c:'#f59e0b'},
+    {k:'onlyA', label:`only ${aL}`, c:'#38bdf8'},
+    {k:'onlyB', label:`only ${bL}`, c:'#38bdf8'},
+  ];
+  // Every op card is its own grid, so `auto` board columns would size to each
+  // card's own widest cell and drift card-to-card. Pin ONE shared width: measure
+  // the widest board cell across the WHOLE payload (mono font → char count is
+  // exact) and expose it as --cmp-col; the CSS tracks read it for every card.
+  // (Computed over ALL data so columns don't jump when a filter is applied.)
+  const cellLen=s=>{
+    if(!s) return 1;                                   // "—"
+    let n=(SMETA[s.s]||SMETA.SKIP).short.length;       // status word
+    if(s.pcc!=null) n+=('  pcc '+(+s.pcc).toFixed(3)).length;
+    if(s.ulp!=null) n+=('  ulp '+(+s.ulp).toFixed(s.ulp<10?2:0)).length;
+    return n;
+  };
+  let colCh=Math.max(aL.length, bL.length);            // header labels also live in these columns
+  for(const o of (CMP.byOp||[])) for(const it of o.items)
+    colCh=Math.max(colCh, cellLen(it.a), cellLen(it.b));
+  const colPx=Math.ceil(colCh*6.6)+8;                  // ~6.6px/ch mono + a little air
+  body.style.setProperty('--cmp-col', colPx+'px');     // one shared board-column width for all cards
+
+  // one board's outcome cell; data-b carries the board name for the narrow-screen
+  // "N150: …" prefix (see the @media block in index.html).
+  const side=(tag, s)=>`<span class="cmp-side" data-b="${esc(tag)}">${chgSide(s)}</span>`;
+  // column header row — the board names live here ONCE, not tagged on every row.
+  const head=`<div class="cmp-row cmp-hd"><span class="cfg">config</span><span class="cmp-side">${esc(aL)}</span><span class="cmp-side">${esc(bL)}</span></div>`;
+
+  // --- filterable summary chips -------------------------------------------
+  // Clicking a chip toggles its kind; the list then shows only those rows.
+  // Empty set = show everything (all chips look "off", nothing is excluded).
+  const active=new Set();
+  // static shell: chips + meta + list get repainted by paint() on every toggle.
+  body.innerHTML=
+    `<div class="chg-sum" id="cmpChips"></div>
+     <div class="chg-meta" id="cmpMeta"></div>
+     <div class="chg-list" id="cmpList"></div>`;
+  const chipsEl=$('#cmpChips'), metaEl=$('#cmpMeta'), listEl=$('#cmpList');
+
+  function paint(){
+    const kinds = active.size ? [...active] : sumMeta.map(m=>m.k);   // active, or all
+    // chips: dim zero-count (non-interactive); highlight the ones currently on.
+    chipsEl.innerHTML = sumMeta.map(m=>{
+      const v=S[m.k]||0, on=active.has(m.k);
+      return `<button type="button" class="chg-chip is-filter${v?'':' zero'}${on?' on':''}"`
+        + `${v?'':' disabled'} data-k="${m.k}" aria-pressed="${on}">`
+        + `<span class="d" style="background:${m.c}"></span>${v} ${esc(m.label)}</button>`;
+    }).join('');
+
+    // per-op card, restricted to the active kinds. Use o.counts for true totals
+    // (items are capped at 20 in the payload) so ">N more" stays honest.
+    const cards=(CMP.byOp||[]).map(o=>{
+      const cnt=o.counts||{};
+      const trueCount=kinds.reduce((n,k)=>n+(cnt[k]||0),0);
+      if(!trueCount) return '';                         // card has nothing in this filter
+      const items=(o.items||[]).filter(it=> active.size===0 || active.has(it.kind));
+      const rows=items.map(it=>{
+        const cfg=`<b>${esc(it.dt)}</b> · ${esc(it.ly)}·${esc(it.mem)}${it.bcast&&it.bcast!=='none'?'·'+esc(it.bcast):''}`;
+        return `<div class="cmp-row"><span class="cfg">${cfg}</span>${side(aL,it.a)}${side(bL,it.b)}</div>`;
+      }).join('');
+      const more=Math.max(0, trueCount-items.length);
+      const moreEl=more?`<div class="chg-more">+${more} more difference${more>1?'s':''} in ${esc(o.op)}</div>`:'';
+      return `<div class="chg-op">
+        <div class="chg-op-h"><span class="nm">${esc(o.op)}</span><span class="mini"><i style="color:var(--faint);background:#64748b1f">${trueCount} differ</i></span></div>
+        <div class="cmp-tbl">${head}${rows}</div>${moreEl}</div>`;
+    }).join('');
+
+    const total=kinds.reduce((n,k)=>n+(S[k]||0),0);
+    const opN=(CMP.byOp||[]).filter(o=>kinds.reduce((n,k)=>n+((o.counts||{})[k]||0),0)>0).length;
+    const filtered=active.size>0;
+    metaEl.innerHTML=`<b>${total}</b> ${filtered?'matching ':''}differing config${total===1?'':'s'} across <b>${opN}</b> op${opN===1?'':'s'} · ${esc(aL)} vs ${esc(bL)}`
+      + (filtered?` · <button type="button" class="chg-clear" id="cmpClear">clear filter</button>`:'');
+    listEl.innerHTML= cards || `<div class="chg-empty">${filtered?'No configs match this filter.':'The two boards agree on every config.'}</div>`;
+
+    // hover the outcome word to see the full reason (ERR TT_FATAL / fail verdict), both sides.
+    listEl.querySelectorAll('.st-why').forEach(el=> bindTip(el, x=>{
+      let r=x.dataset.reason||'';
+      if(r.length>300) r=r.slice(0,300)+'…';
+      return `<div class="t-r">${esc(r)}</div>`;   // esc() handles & < > (not just <)
+    }));
+  }
+
+  // toggle a chip → flip its kind in the active set → repaint.
+  chipsEl.addEventListener('click', e=>{
+    const b=e.target.closest('.is-filter'); if(!b || b.disabled) return;
+    const k=b.dataset.k;
+    active.has(k) ? active.delete(k) : active.add(k);
+    paint();
+  });
+  // "clear filter" link in the meta line resets to show-all.
+  body.addEventListener('click', e=>{
+    if(e.target.id==='cmpClear'){ active.clear(); paint(); }
+  });
+
+  paint();
+}
+
+(function compareModal(){
+  const overlay=$('#compareOverlay'); if(!overlay) return;
+  const openBtn=$('#compareOpen'), closeEls=[$('#compareClose')];
+  let lastFocus=null;
+  function open(){
+    lastFocus=document.activeElement;
+    overlay.hidden=false; document.body.style.overflow='hidden';
+    addEventListener('keydown',onKey);
+    setTimeout(()=>{ const x=$('#compareClose'); x&&x.focus(); },40);
+  }
+  function close(){
+    overlay.hidden=true; document.body.style.overflow='';
+    removeEventListener('keydown',onKey);
+    if(lastFocus&&lastFocus.focus) lastFocus.focus();
+  }
+  function onKey(e){
+    if(e.key==='Escape'){ e.preventDefault(); close(); }
+    if(e.key==='Tab') trapTab(e);
+  }
+  function trapTab(e){
+    const f=overlay.querySelectorAll('button,input,select,textarea,a[href]');
+    const vis=[...f].filter(el=>!el.disabled&&el.offsetParent!==null);
+    if(!vis.length) return;
+    const first=vis[0], last=vis[vis.length-1];
+    if(e.shiftKey&&document.activeElement===first){ e.preventDefault(); last.focus(); }
+    else if(!e.shiftKey&&document.activeElement===last){ e.preventDefault(); first.focus(); }
+  }
+  openBtn&&openBtn.addEventListener('click',open);
+  closeEls.forEach(el=>el&&el.addEventListener('click',close));
+  overlay.addEventListener('mousedown',e=>{ if(e.target===overlay) close(); });
+})();
 
 (function changesModal(){
   const overlay=$('#changesOverlay'); if(!overlay) return;
@@ -1244,6 +1421,7 @@ renderErr();
 renderSnapshot();
 renderUlp();
 renderChanges();
+renderCompare();
 renderChips();
 renderHead();
 renderTable();

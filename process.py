@@ -206,7 +206,9 @@ def compute_changes(board, root_csv):
 
     per_op = defaultdict(lambda: {"items": [], "counts": Counter()})
     SUM = base["summary"]
-    for key in set(cur) | set(prev):
+    # sorted() so the per-op sample (capped at 20) is deterministic across runs —
+    # set iteration order depends on hash seeding and would otherwise churn data.js.
+    for key in sorted(set(cur) | set(prev)):
         op, dt, ly, mem, bcast = key
         a, b = prev.get(key), cur.get(key)
         if a is None:
@@ -255,6 +257,82 @@ def compute_changes(board, root_csv):
     by_op.sort(key=lambda o: op_weight(o["counts"]), reverse=True)
     base["byOp"] = by_op[:60]
     return base
+
+
+# Board display labels for the cross-board Compare view (falls back to upper()).
+BOARD_LABELS = {"n150": "N150", "p100a": "P100a"}
+
+
+def _cmp_side(x):
+    """One board's outcome for the Compare view, in the chgSide shape the frontend
+    renders. None when the config is absent on that board. Carries the reason only
+    for non-PASS outcomes (an ERR's TT_FATAL text / a fail verdict), trimmed."""
+    if x is None:
+        return None
+    s = {"s": x["s"], "pcc": x["pcc"], "ulp": x["ulp"]}
+    if x["s"] != "PASS" and x.get("r"):
+        s["r"] = x["r"][:400]
+    return s
+
+
+def compute_compare(board_a, csv_a, board_b, csv_b):
+    """Cross-board diff for the CURRENT data: every (op,dtype,layout,mem,bcast)
+    config whose outcome differs between two boards. Neutral, both-ways — each
+    differing config carries board a's side and board b's side; no baseline /
+    improved / regressed framing. Reuses parse_matrix + diff_kind's threshold so
+    a config counts as "differing" when the status differs, one side is missing,
+    or there's a meaningful numeric move (pcc Δ>=0.01 or ULP-bucket change)."""
+    try:
+        A = parse_matrix(csv_a)
+        B = parse_matrix(csv_b)
+    except OSError:
+        return None
+
+    _KINDS = ("onlyA", "onlyB", "statusDiff", "numericDiff")
+    per_op = defaultdict(lambda: {"items": [], "count": 0,
+                                  "counts": {k: 0 for k in _KINDS}})
+    summary = {"onlyA": 0, "onlyB": 0, "statusDiff": 0, "numericDiff": 0}
+    # sorted() so the per-op sample (capped at 20) is deterministic across runs —
+    # set iteration order depends on hash seeding and would otherwise churn data.js.
+    for key in sorted(set(A) | set(B)):
+        op, dt, ly, mem, bcast = key
+        a, b = A.get(key), B.get(key)
+        if a is None:
+            kind = "onlyB"
+        elif b is None:
+            kind = "onlyA"
+        elif a["s"] != b["s"]:
+            kind = "statusDiff"
+        else:
+            # same status on both boards — only a meaningful numeric move counts.
+            k = diff_kind(a, b)
+            if k != "shift":
+                continue
+            kind = "numericDiff"
+        summary[kind] += 1
+        rec = per_op[op]
+        rec["count"] += 1
+        rec["counts"][kind] += 1
+        # `kind` rides on each item so the front-end summary chips can filter rows.
+        if len(rec["items"]) < 20:
+            rec["items"].append({"dt": dt, "ly": ly, "mem": mem, "bcast": bcast,
+                                 "kind": kind, "a": _cmp_side(a), "b": _cmp_side(b)})
+
+    by_op = []
+    for op, rec in per_op.items():
+        by_op.append({"op": op, "count": rec["count"], "counts": rec["counts"],
+                      "items": rec["items"],
+                      "more": max(0, rec["count"] - len(rec["items"]))})
+    # most-differing ops first
+    by_op.sort(key=lambda o: o["count"], reverse=True)
+
+    return {
+        "a": board_a, "b": board_b,
+        "aLabel": BOARD_LABELS.get(board_a, board_a.upper()),
+        "bLabel": BOARD_LABELS.get(board_b, board_b.upper()),
+        "summary": summary,
+        "byOp": by_op[:60],
+    }
 
 
 def build_board(board, csv_path):
@@ -458,7 +536,16 @@ def main():
     board_order = [b for b, _ in boards]
     default_board = "n150" if "n150" in payloads else board_order[0]
 
-    data = {"boards": payloads, "defaultBoard": default_board, "boardOrder": board_order}
+    # Cross-board Compare payload (top-level, board-agnostic): only when >=2 boards
+    # exist. Diffs the first two boards' root CSVs so the frontend can list every
+    # config that behaves differently across hardware. None -> app.js hides the button.
+    compare = None
+    if len(boards) >= 2:
+        (ba, pa), (bb, pb) = boards[0], boards[1]
+        compare = compute_compare(ba, pa, bb, pb)
+
+    data = {"boards": payloads, "defaultBoard": default_board,
+            "boardOrder": board_order, "compare": compare}
 
     with open(OUT, "w") as f:
         f.write("window.DASH=")
