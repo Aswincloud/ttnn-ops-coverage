@@ -14,9 +14,9 @@ name: Daily eltwise support matrix (tt-metal)
 
 on:
   schedule:
-    # 20:00 UTC = 01:30 IST — staggered 30 min after the perf pipeline's 19:30
+    # 01:30 UTC = 07:00 IST — staggered 30 min after the perf pipeline's 01:00
     # UTC run so the two don't contend for the same shared viommu HW pool.
-    - cron: "0 20 * * *"
+    - cron: "30 1 * * *"
   workflow_dispatch: {}
 
 # Never cancel an in-flight run: it owns viommu hardware jobs on tt-metal's
