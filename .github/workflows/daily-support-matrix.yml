@@ -14,9 +14,11 @@ name: Daily eltwise support matrix (tt-metal)
 
 on:
   schedule:
-    # 01:30 UTC = 07:00 IST — staggered 30 min after the perf pipeline's 01:00
-    # UTC run so the two don't contend for the same shared viommu HW pool.
-    - cron: "30 1 * * *"
+    # 20:00 UTC = 01:30 IST — staggered 30 min after the perf pipeline's 19:30
+    # UTC run so the two don't contend for the same shared viommu HW pool. Runs
+    # the prior UTC day, but the guard step dates the file in IST, so the
+    # dashboard shows the correct IST run day (not the previous UTC day).
+    - cron: "0 20 * * *"
   workflow_dispatch: {}
 
 # Never cancel an in-flight run: it owns viommu hardware jobs on tt-metal's
@@ -60,7 +62,12 @@ jobs:
           set -euo pipefail
           # No idempotency skip: result filenames are timestamped and land in
           # per-board subdirs, so a same-day re-run never collides.
-          echo "date=$(date -u +%F)" >> "$GITHUB_OUTPUT"
+          # IST, not UTC: the cron is 1:30 AM IST (20:00 UTC of the prior day).
+          # The dashboard's data day is parsed straight from this filename prefix
+          # (process.py::_date_from), so a UTC date would label every snapshot the
+          # previous day. Use Asia/Kolkata so the history CSV is dated the IST run
+          # day. (The 'generated'/'generatedUTC' fields stay honest build-time UTC.)
+          echo "date=$(TZ='Asia/Kolkata' date +%F)" >> "$GITHUB_OUTPUT"
 
       # 1. Rebase the tt-metal branch onto upstream main so its build tooling
       #    (build-artifact.yaml etc.) stays current. Conflict => file an issue,
