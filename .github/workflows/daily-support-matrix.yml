@@ -418,6 +418,7 @@ jobs:
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
 
       - name: Commit results + open auto-merging PR
+        id: commit
         if: steps.plan.outputs.ingest == 'true'
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}          # bot authors the PR
@@ -485,6 +486,8 @@ jobs:
 
           if git diff --cached --quiet; then
             echo "Nothing to commit (identical files already present); skipping PR."
+            # No data landed -> the change notifier below must not run.
+            echo "committed=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           git commit -m "data: eltwise support matrix ${DATE} (per-board: N150+P100a)"
@@ -498,6 +501,10 @@ jobs:
             --title "data: eltwise support matrix ${DATE} (per-board: N150+P100a)" \
             --body "${ORIGIN} tt-metal eltwise support-probe run — one build, 2 boards (N150+P100a viommu) x 10 shards. Updates each board's root \`eltwise_support_matrix_<board>.csv\` (the dashboard source) plus a dated copy under \`history/workflow/\`.")
           echo "Opened $PR_URL"
+          # Data landed -> let the change notifier run, and give it the PR link.
+          echo "committed=true" >> "$GITHUB_OUTPUT"
+          echo "pr_url=$PR_URL" >> "$GITHUB_OUTPUT"
+          echo "date=$DATE" >> "$GITHUB_OUTPUT"
 
           # The membership-gated auto-approve workflow won't fire for a bot
           # author, so approve inline with a different write identity
@@ -511,6 +518,87 @@ jobs:
           # enabled"); the queue squashes and deletes the head branch itself.
           gh pr merge "$PR_URL" -R "$OUR_REPO" --auto
           echo "✅ Auto-merge enabled; merge queue will land it once checks pass."
+
+      # 6a. Tell Slack when today's data actually DIFFERS from the previous run.
+      #     The diff is not recomputed here: scripts/changes_summary.py calls
+      #     process.py's compute_changes() — the same function behind the
+      #     dashboard's "Changes" view — so the alert can never disagree with it.
+      #     Runs right after the commit step because the tree now holds today's
+      #     root CSV *and* today's dated snapshot, which is exactly the
+      #     today-vs-yesterday pair compute_changes() expects (newest history
+      #     snapshot == root CSV). Most days are a no-op: over the 15 days to
+      #     2026-08-17 only two had any change at all.
+      - name: Notify Slack on data change
+        if: steps.commit.outputs.committed == 'true'
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_CHANNEL: C09CV1RTNJC                        # same channel as the failure notifier
+          # The commit step's DATE, not guard's: in recover/safety-net mode it
+          # derives the real business date from the tt-metal run's createdAt.
+          DATE: ${{ steps.commit.outputs.date }}
+          MODE: ${{ steps.mode.outputs.mode }}
+          PR_URL: ${{ steps.commit.outputs.pr_url }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SLACK_BOT_TOKEN:-}" ]; then
+            echo "SLACK_BOT_TOKEN not set — skipping change notification."
+            exit 0
+          fi
+
+          # Emits {changed, total, text, mrkdwn, dashboard, boards[...]} and always
+          # exits 0, so we branch on .changed rather than on an exit code.
+          python3 scripts/changes_summary.py > /tmp/changes.json
+          if [ "$(jq -r .changed /tmp/changes.json)" != "true" ]; then
+            echo "No changes vs the previous run — skipping Slack notification."
+            jq -r .mrkdwn /tmp/changes.json
+            exit 0
+          fi
+          TOTAL=$(jq -r .total /tmp/changes.json)
+          echo "${TOTAL} change(s) vs the previous run — notifying Slack."
+
+          RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          MODE_NOTE=""
+          [ "${MODE:-normal}" != "normal" ] && MODE_NOTE="Ingested via *${MODE}* mode."
+
+          # The mrkdwn body is built in Python (json.dumps escapes the op names it
+          # embeds for free); jq only splices in the links. Never hand-roll JSON
+          # around this text in bash. The body deliberately carries no
+          # pcc_or_reason/TT_FATAL text — counts and op names only, so a message
+          # stays short and can't smuggle a C++ backtrace into the payload.
+          PAYLOAD=$(jq -n \
+            --arg channel "$SLACK_CHANNEL" \
+            --arg date    "${DATE:-n/a}" \
+            --arg runurl  "$RUN_URL" \
+            --arg prurl   "${PR_URL:-}" \
+            --arg modenote "$MODE_NOTE" \
+            --slurpfile c /tmp/changes.json '
+            ( $c[0] ) as $ch |
+            ( $ch.mrkdwn
+              + (if $modenote != "" then "\n\n" + $modenote else "" end)
+              + "\n\n<" + $ch.dashboard + "|open dashboard>"
+              + (if $prurl != "" then " · <" + $prurl + "|data PR>" else "" end)
+              + " · <" + $runurl + "|pipeline run>"
+            ) as $body |
+            { channel: $channel,
+              text: ("📊 " + $ch.text + " (" + $date + ")"),
+              blocks: [
+                {type:"header", text:{type:"plain_text",
+                 text:("📊 Support matrix changed (" + $date + ")"), emoji:true}},
+                {type:"section", text:{type:"mrkdwn", text:$body}}
+              ] }')
+
+          # Slack returns HTTP 200 even on logical errors; inspect the JSON "ok".
+          RESP=$(curl -sS -X POST https://slack.com/api/chat.postMessage \
+            -H "Authorization: Bearer ${SLACK_BOT_TOKEN}" \
+            -H 'Content-Type: application/json; charset=utf-8' \
+            --data "$PAYLOAD")
+          if printf '%s' "$RESP" | grep -q '"ok":true'; then
+            echo "✅ Slack notified (${TOTAL} changes)."
+          else
+            # The data already landed and is merging — a Slack hiccup must not
+            # redden the run (that would also trip the failure notifier below).
+            echo "::warning::Slack change-notify failed: ${RESP}"
+          fi
 
       # 7. On any failure OR cancellation, file/dedupe an issue assigned to
       #    Aswinmcw. Cancellation is included because a hosted-runner SIGTERM is a
