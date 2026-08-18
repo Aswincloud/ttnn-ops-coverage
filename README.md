@@ -54,6 +54,13 @@ regressed, were added/removed, or had a meaningful PCC/ULP shift. The diff is co
 "no baseline snapshot yet". See [PROBE.md](PROBE.md#daily-runs--dashboards) for the
 `--dated` workflow.
 
+You don't have to open the dashboard to find out: when a daily run lands data that differs
+from the previous run, the pipeline posts the same diff to Slack — per board, regressions
+first, with the top changed ops. `scripts/changes_summary.py` calls the very same
+`process.py` `compute_changes()`, so the alert can never disagree with the **Changes** view.
+Days with no change are silent (over the 15 days to 2026-08-17, only two had any change), and
+a Slack outage only warns — it never fails the pipeline or blocks the data from landing.
+
 ### Suggest / feedback
 
 A **Suggest** button opens a modal that POSTs to `/api/feedback` (handled by the Worker →
