@@ -65,7 +65,7 @@ jobs:
     steps:
       # 0. Checkout our repo (commit base) + compute the run date.
       - name: Checkout coverage repo
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
           # Don't persist GITHUB_TOKEN as a git http.extraheader: it would
