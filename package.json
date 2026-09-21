@@ -16,9 +16,9 @@
     "test:e2e": "playwright test"
   },
   "devDependencies": {
-    "@playwright/test": "^1.62.1",
-    "eslint": "^10.9.1",
-    "wrangler": "^4.129.0",
+    "@playwright/test": "^1.63.0",
+    "eslint": "^10.10.0",
+    "wrangler": "^4.134.0",
     "serve": "^14.2.5"
   }
 }
