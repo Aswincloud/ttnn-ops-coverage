@@ -65,7 +65,7 @@ jobs:
     steps:
       # 0. Checkout our repo (commit base) + compute the run date.
       - name: Checkout coverage repo
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
           # Don't persist GITHUB_TOKEN as a git http.extraheader: it would
@@ -676,7 +676,7 @@ jobs:
       #    even though the dispatched tt-metal run may have succeeded (recoverable).
       - name: File issue on failure
         if: failure() || cancelled()
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         with:
           script: |
             const cancelled = '${{ job.status }}' === 'cancelled';
