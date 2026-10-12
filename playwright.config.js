@@ -16,7 +16,7 @@ export default defineConfig({
   webServer: {
     // Always (re)build data.js and start fresh so results never depend on a
     // stale public/data.js from a previously-running local server.
-    command: 'python3 process.py && npx serve@14 public -l 4173 -n',
+    command: 'python3 process.py && python3 -m http.server 4173 --bind 127.0.0.1 --directory public',
     url: 'http://127.0.0.1:4173',
     reuseExistingServer: false,
     timeout: 120_000,
