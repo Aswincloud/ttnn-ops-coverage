@@ -37439,16 +37439,16 @@ nez,uint8,tile,dram,none,FAIL,"TT_FATAL @ /work/ttnn/cpp/ttnn/operations/eltwise
 nez,uint8,tile,height,none,FAIL,"TT_FATAL @ /work/ttnn/cpp/ttnn/operations/eltwise/unary/device/unary_device_operation.cpp:113: unary_op_supports_integer_dtype(op.type(), input_dtype) | info: | Unary: UnaryOpType::NEZ does not support integer input dtype DataType::UINT8",[1..49],,
 nez,uint8,tile,l1,none,FAIL,"TT_FATAL @ /work/ttnn/cpp/ttnn/operations/eltwise/unary/device/unary_device_operation.cpp:113: unary_op_supports_integer_dtype(op.type(), input_dtype) | info: | Unary: UnaryOpType::NEZ does not support integer input dtype DataType::UINT8",[1..49],,
 nez,uint8,tile,width,none,FAIL,"TT_FATAL @ /work/ttnn/cpp/ttnn/operations/eltwise/unary/device/unary_device_operation.cpp:113: unary_op_supports_integer_dtype(op.type(), input_dtype) | info: | Unary: UnaryOpType::NEZ does not support integer input dtype DataType::UINT8",[1..49],,
-normalize_global,bfloat16,rm,block,none,FAIL,TT_FATAL @ /work/ttnn/cpp/ttnn/operations/data_movement/bcast/device/bcast_device_operation.cpp:125: input_tensor_a.memory_config().memory_layout() == TensorMemoryLayout::INTERLEAVED || input_tensor_a.memory_config().memory_layout() == TensorMemoryLayout::HEIGHT_SHARDED | info: | HW bcast in0 supports Height Sharding or Interleaving,[0.1..0.85],,
+normalize_global,bfloat16,rm,block,none,OK,pass,[0.1..0.85],0.999998,4480.000
 normalize_global,bfloat16,rm,dram,none,OK,pass,[0.1..0.85],0.999998,444.000
 normalize_global,bfloat16,rm,height,none,OK,pass,[0.1..0.85],0.999998,207.000
 normalize_global,bfloat16,rm,l1,none,OK,pass,[0.1..0.85],0.999998,1408.000
-normalize_global,bfloat16,rm,width,none,FAIL,TT_FATAL @ /work/ttnn/cpp/ttnn/operations/data_movement/bcast/device/bcast_device_operation.cpp:125: input_tensor_a.memory_config().memory_layout() == TensorMemoryLayout::INTERLEAVED || input_tensor_a.memory_config().memory_layout() == TensorMemoryLayout::HEIGHT_SHARDED | info: | HW bcast in0 supports Height Sharding or Interleaving,[0.1..0.85],,
-normalize_global,bfloat16,tile,block,none,FAIL,TT_FATAL @ /work/ttnn/cpp/ttnn/operations/data_movement/bcast/device/bcast_device_operation.cpp:125: input_tensor_a.memory_config().memory_layout() == TensorMemoryLayout::INTERLEAVED || input_tensor_a.memory_config().memory_layout() == TensorMemoryLayout::HEIGHT_SHARDED | info: | HW bcast in0 supports Height Sharding or Interleaving,[0.1..0.85],,
+normalize_global,bfloat16,rm,width,none,OK,pass,[0.1..0.85],0.999998,224.000
+normalize_global,bfloat16,tile,block,none,OK,pass,[0.1..0.85],0.999998,132.000
 normalize_global,bfloat16,tile,dram,none,OK,pass,[0.1..0.85],0.999998,217.000
 normalize_global,bfloat16,tile,height,none,OK,pass,[0.1..0.85],0.999998,158.000
 normalize_global,bfloat16,tile,l1,none,OK,pass,[0.1..0.85],0.999998,1000.000
-normalize_global,bfloat16,tile,width,none,FAIL,TT_FATAL @ /work/ttnn/cpp/ttnn/operations/data_movement/bcast/device/bcast_device_operation.cpp:125: input_tensor_a.memory_config().memory_layout() == TensorMemoryLayout::INTERLEAVED || input_tensor_a.memory_config().memory_layout() == TensorMemoryLayout::HEIGHT_SHARDED | info: | HW bcast in0 supports Height Sharding or Interleaving,[0.1..0.85],,
+normalize_global,bfloat16,tile,width,none,OK,pass,[0.1..0.85],0.999998,972.000
 normalize_global,bfloat4_b,rm,block,none,FAIL,TT_FATAL @ /work/ttnn/core/tensor/py_to_tt_tensor.cpp:412: layout == Layout::TILE | info: | Layout must be Layout::TILE for bfloat8_b or bfloat4_b!,[0.1..0.85],,
 normalize_global,bfloat4_b,rm,dram,none,FAIL,TT_FATAL @ /work/ttnn/core/tensor/py_to_tt_tensor.cpp:412: layout == Layout::TILE | info: | Layout must be Layout::TILE for bfloat8_b or bfloat4_b!,[0.1..0.85],,
 normalize_global,bfloat4_b,rm,height,none,FAIL,TT_FATAL @ /work/ttnn/core/tensor/py_to_tt_tensor.cpp:412: layout == Layout::TILE | info: | Layout must be Layout::TILE for bfloat8_b or bfloat4_b!,[0.1..0.85],,
@@ -37464,21 +37464,21 @@ normalize_global,bfloat8_b,rm,dram,none,FAIL,TT_FATAL @ /work/ttnn/core/tensor/p
 normalize_global,bfloat8_b,rm,height,none,FAIL,TT_FATAL @ /work/ttnn/core/tensor/py_to_tt_tensor.cpp:412: layout == Layout::TILE | info: | Layout must be Layout::TILE for bfloat8_b or bfloat4_b!,[0.1..0.85],,
 normalize_global,bfloat8_b,rm,l1,none,FAIL,TT_FATAL @ /work/ttnn/core/tensor/py_to_tt_tensor.cpp:412: layout == Layout::TILE | info: | Layout must be Layout::TILE for bfloat8_b or bfloat4_b!,[0.1..0.85],,
 normalize_global,bfloat8_b,rm,width,none,FAIL,TT_FATAL @ /work/ttnn/core/tensor/py_to_tt_tensor.cpp:412: layout == Layout::TILE | info: | Layout must be Layout::TILE for bfloat8_b or bfloat4_b!,[0.1..0.85],,
-normalize_global,bfloat8_b,tile,block,none,FAIL,TT_FATAL @ /work/ttnn/cpp/ttnn/operations/data_movement/bcast/device/bcast_device_operation.cpp:125: input_tensor_a.memory_config().memory_layout() == TensorMemoryLayout::INTERLEAVED || input_tensor_a.memory_config().memory_layout() == TensorMemoryLayout::HEIGHT_SHARDED | info: | HW bcast in0 supports Height Sharding or Interleaving,[0.1..0.85],,
+normalize_global,bfloat8_b,tile,block,none,OK,pass,[0.1..0.85],0.999916,8064.000
 normalize_global,bfloat8_b,tile,dram,none,OK,pass,[0.1..0.85],0.999929,7936.000
 normalize_global,bfloat8_b,tile,height,none,OK,pass,[0.1..0.85],0.999906,1248.000
 normalize_global,bfloat8_b,tile,l1,none,OK,pass,[0.1..0.85],0.999935,249.000
-normalize_global,bfloat8_b,tile,width,none,FAIL,TT_FATAL @ /work/ttnn/cpp/ttnn/operations/data_movement/bcast/device/bcast_device_operation.cpp:125: input_tensor_a.memory_config().memory_layout() == TensorMemoryLayout::INTERLEAVED || input_tensor_a.memory_config().memory_layout() == TensorMemoryLayout::HEIGHT_SHARDED | info: | HW bcast in0 supports Height Sharding or Interleaving,[0.1..0.85],,
-normalize_global,float32,rm,block,none,FAIL,TT_FATAL @ /work/ttnn/cpp/ttnn/operations/data_movement/bcast/device/bcast_device_operation.cpp:125: input_tensor_a.memory_config().memory_layout() == TensorMemoryLayout::INTERLEAVED || input_tensor_a.memory_config().memory_layout() == TensorMemoryLayout::HEIGHT_SHARDED | info: | HW bcast in0 supports Height Sharding or Interleaving,[0.1..0.85],,
-normalize_global,float32,rm,dram,none,OK,pass,[0.1..0.85],0.999991,15632307.000
-normalize_global,float32,rm,height,none,OK,pass,[0.1..0.85],0.999991,25018532.000
-normalize_global,float32,rm,l1,none,OK,pass,[0.1..0.85],0.999992,11874942.000
-normalize_global,float32,rm,width,none,FAIL,TT_FATAL @ /work/ttnn/cpp/ttnn/operations/data_movement/bcast/device/bcast_device_operation.cpp:125: input_tensor_a.memory_config().memory_layout() == TensorMemoryLayout::INTERLEAVED || input_tensor_a.memory_config().memory_layout() == TensorMemoryLayout::HEIGHT_SHARDED | info: | HW bcast in0 supports Height Sharding or Interleaving,[0.1..0.85],,
-normalize_global,float32,tile,block,none,FAIL,TT_FATAL @ /work/ttnn/cpp/ttnn/operations/data_movement/bcast/device/bcast_device_operation.cpp:125: input_tensor_a.memory_config().memory_layout() == TensorMemoryLayout::INTERLEAVED || input_tensor_a.memory_config().memory_layout() == TensorMemoryLayout::HEIGHT_SHARDED | info: | HW bcast in0 supports Height Sharding or Interleaving,[0.1..0.85],,
-normalize_global,float32,tile,dram,none,OK,pass,[0.1..0.85],0.999991,9449277.000
-normalize_global,float32,tile,height,none,OK,pass,[0.1..0.85],0.999991,5825872.000
-normalize_global,float32,tile,l1,none,OK,pass,[0.1..0.85],0.999991,14800794.000
-normalize_global,float32,tile,width,none,FAIL,TT_FATAL @ /work/ttnn/cpp/ttnn/operations/data_movement/bcast/device/bcast_device_operation.cpp:125: input_tensor_a.memory_config().memory_layout() == TensorMemoryLayout::INTERLEAVED || input_tensor_a.memory_config().memory_layout() == TensorMemoryLayout::HEIGHT_SHARDED | info: | HW bcast in0 supports Height Sharding or Interleaving,[0.1..0.85],,
+normalize_global,bfloat8_b,tile,width,none,OK,pass,[0.1..0.85],0.999912,800.000
+normalize_global,float32,rm,block,none,OK,pass,[0.1..0.85],1.000000,1.000
+normalize_global,float32,rm,dram,none,OK,pass,[0.1..0.85],1.000000,4795.000
+normalize_global,float32,rm,height,none,OK,pass,[0.1..0.85],1.000000,590.000
+normalize_global,float32,rm,l1,none,OK,pass,[0.1..0.85],1.000000,9248.000
+normalize_global,float32,rm,width,none,OK,pass,[0.1..0.85],1.000000,1180.000
+normalize_global,float32,tile,block,none,OK,pass,[0.1..0.85],1.000000,583.000
+normalize_global,float32,tile,dram,none,OK,pass,[0.1..0.85],1.000000,1.000
+normalize_global,float32,tile,height,none,OK,pass,[0.1..0.85],1.000000,1.000
+normalize_global,float32,tile,l1,none,OK,pass,[0.1..0.85],1.000000,74423.000
+normalize_global,float32,tile,width,none,OK,pass,[0.1..0.85],1.000000,4744.000
 normalize_global,int32,rm,block,none,FAIL,TT_FATAL @ /work/ttnn/cpp/ttnn/operations/reduction/generic/generic_reductions.cpp:564: dt != DataType::INT32 && dt != DataType::UINT32 | info: | ttnn.mean does not support integer inputs - got DataType::INT32.,[1..49],,
 normalize_global,int32,rm,dram,none,FAIL,TT_FATAL @ /work/ttnn/cpp/ttnn/operations/reduction/generic/generic_reductions.cpp:564: dt != DataType::INT32 && dt != DataType::UINT32 | info: | ttnn.mean does not support integer inputs - got DataType::INT32.,[1..49],,
 normalize_global,int32,rm,height,none,FAIL,TT_FATAL @ /work/ttnn/cpp/ttnn/operations/reduction/generic/generic_reductions.cpp:564: dt != DataType::INT32 && dt != DataType::UINT32 | info: | ttnn.mean does not support integer inputs - got DataType::INT32.,[1..49],,
@@ -37519,16 +37519,16 @@ normalize_global,uint8,tile,dram,none,FAIL,"TT_FATAL @ /work/ttnn/cpp/ttnn/opera
 normalize_global,uint8,tile,height,none,FAIL,"TT_FATAL @ /work/ttnn/cpp/ttnn/operations/reduction/generic/device/reduce_op_device_operation.cpp:144: tensor_args.dtype() == DataType::BFLOAT16 || tensor_args.dtype() == DataType::FLOAT32 || tensor_args.dtype() == DataType::BFLOAT8_B || is_int32_sfpu_reduce | info: | Only FLOAT32, BFLOAT16 and BFLOAT8_B are supported for generic reduction (INT32 is supported for MAX/MIN/SUM; ttnn.sum/max/min route UINT32 through INT32) - got DataType::UINT8.",[1..49],,
 normalize_global,uint8,tile,l1,none,FAIL,"TT_FATAL @ /work/ttnn/cpp/ttnn/operations/reduction/generic/device/reduce_op_device_operation.cpp:144: tensor_args.dtype() == DataType::BFLOAT16 || tensor_args.dtype() == DataType::FLOAT32 || tensor_args.dtype() == DataType::BFLOAT8_B || is_int32_sfpu_reduce | info: | Only FLOAT32, BFLOAT16 and BFLOAT8_B are supported for generic reduction (INT32 is supported for MAX/MIN/SUM; ttnn.sum/max/min route UINT32 through INT32) - got DataType::UINT8.",[1..49],,
 normalize_global,uint8,tile,width,none,FAIL,"TT_FATAL @ /work/ttnn/cpp/ttnn/operations/reduction/generic/device/reduce_op_device_operation.cpp:144: tensor_args.dtype() == DataType::BFLOAT16 || tensor_args.dtype() == DataType::FLOAT32 || tensor_args.dtype() == DataType::BFLOAT8_B || is_int32_sfpu_reduce | info: | Only FLOAT32, BFLOAT16 and BFLOAT8_B are supported for generic reduction (INT32 is supported for MAX/MIN/SUM; ttnn.sum/max/min route UINT32 through INT32) - got DataType::UINT8.",[1..49],,
-normalize_hw,bfloat16,rm,block,none,FAIL,TT_FATAL @ /work/ttnn/cpp/ttnn/operations/data_movement/bcast/device/bcast_device_operation.cpp:125: input_tensor_a.memory_config().memory_layout() == TensorMemoryLayout::INTERLEAVED || input_tensor_a.memory_config().memory_layout() == TensorMemoryLayout::HEIGHT_SHARDED | info: | HW bcast in0 supports Height Sharding or Interleaving,[0.1..0.85],,
+normalize_hw,bfloat16,rm,block,none,OK,pass,[0.1..0.85],0.999998,344.000
 normalize_hw,bfloat16,rm,dram,none,OK,pass,[0.1..0.85],0.999998,142.000
 normalize_hw,bfloat16,rm,height,none,OK,pass,[0.1..0.85],0.999998,450.000
 normalize_hw,bfloat16,rm,l1,none,OK,pass,[0.1..0.85],0.999998,36864.000
-normalize_hw,bfloat16,rm,width,none,FAIL,TT_FATAL @ /work/ttnn/cpp/ttnn/operations/data_movement/bcast/device/bcast_device_operation.cpp:125: input_tensor_a.memory_config().memory_layout() == TensorMemoryLayout::INTERLEAVED || input_tensor_a.memory_config().memory_layout() == TensorMemoryLayout::HEIGHT_SHARDED | info: | HW bcast in0 supports Height Sharding or Interleaving,[0.1..0.85],,
-normalize_hw,bfloat16,tile,block,none,FAIL,TT_FATAL @ /work/ttnn/cpp/ttnn/operations/data_movement/bcast/device/bcast_device_operation.cpp:125: input_tensor_a.memory_config().memory_layout() == TensorMemoryLayout::INTERLEAVED || input_tensor_a.memory_config().memory_layout() == TensorMemoryLayout::HEIGHT_SHARDED | info: | HW bcast in0 supports Height Sharding or Interleaving,[0.1..0.85],,
+normalize_hw,bfloat16,rm,width,none,OK,pass,[0.1..0.85],0.999998,163.000
+normalize_hw,bfloat16,tile,block,none,OK,pass,[0.1..0.85],0.999998,161.000
 normalize_hw,bfloat16,tile,dram,none,OK,pass,[0.1..0.85],0.999998,480.000
 normalize_hw,bfloat16,tile,height,none,OK,pass,[0.1..0.85],0.999998,223.000
 normalize_hw,bfloat16,tile,l1,none,OK,pass,[0.1..0.85],0.999998,140.000
-normalize_hw,bfloat16,tile,width,none,FAIL,TT_FATAL @ /work/ttnn/cpp/ttnn/operations/data_movement/bcast/device/bcast_device_operation.cpp:125: input_tensor_a.memory_config().memory_layout() == TensorMemoryLayout::INTERLEAVED || input_tensor_a.memory_config().memory_layout() == TensorMemoryLayout::HEIGHT_SHARDED | info: | HW bcast in0 supports Height Sharding or Interleaving,[0.1..0.85],,
+normalize_hw,bfloat16,tile,width,none,OK,pass,[0.1..0.85],0.999998,139.000
 normalize_hw,bfloat4_b,rm,block,none,FAIL,TT_FATAL @ /work/ttnn/core/tensor/py_to_tt_tensor.cpp:412: layout == Layout::TILE | info: | Layout must be Layout::TILE for bfloat8_b or bfloat4_b!,[0.1..0.85],,
 normalize_hw,bfloat4_b,rm,dram,none,FAIL,TT_FATAL @ /work/ttnn/core/tensor/py_to_tt_tensor.cpp:412: layout == Layout::TILE | info: | Layout must be Layout::TILE for bfloat8_b or bfloat4_b!,[0.1..0.85],,
 normalize_hw,bfloat4_b,rm,height,none,FAIL,TT_FATAL @ /work/ttnn/core/tensor/py_to_tt_tensor.cpp:412: layout == Layout::TILE | info: | Layout must be Layout::TILE for bfloat8_b or bfloat4_b!,[0.1..0.85],,
@@ -37544,21 +37544,21 @@ normalize_hw,bfloat8_b,rm,dram,none,FAIL,TT_FATAL @ /work/ttnn/core/tensor/py_to
 normalize_hw,bfloat8_b,rm,height,none,FAIL,TT_FATAL @ /work/ttnn/core/tensor/py_to_tt_tensor.cpp:412: layout == Layout::TILE | info: | Layout must be Layout::TILE for bfloat8_b or bfloat4_b!,[0.1..0.85],,
 normalize_hw,bfloat8_b,rm,l1,none,FAIL,TT_FATAL @ /work/ttnn/core/tensor/py_to_tt_tensor.cpp:412: layout == Layout::TILE | info: | Layout must be Layout::TILE for bfloat8_b or bfloat4_b!,[0.1..0.85],,
 normalize_hw,bfloat8_b,rm,width,none,FAIL,TT_FATAL @ /work/ttnn/core/tensor/py_to_tt_tensor.cpp:412: layout == Layout::TILE | info: | Layout must be Layout::TILE for bfloat8_b or bfloat4_b!,[0.1..0.85],,
-normalize_hw,bfloat8_b,tile,block,none,FAIL,TT_FATAL @ /work/ttnn/cpp/ttnn/operations/data_movement/bcast/device/bcast_device_operation.cpp:125: input_tensor_a.memory_config().memory_layout() == TensorMemoryLayout::INTERLEAVED || input_tensor_a.memory_config().memory_layout() == TensorMemoryLayout::HEIGHT_SHARDED | info: | HW bcast in0 supports Height Sharding or Interleaving,[0.1..0.85],,
+normalize_hw,bfloat8_b,tile,block,none,OK,pass,[0.1..0.85],0.999913,247.000
 normalize_hw,bfloat8_b,tile,dram,none,OK,pass,[0.1..0.85],0.999934,384.000
 normalize_hw,bfloat8_b,tile,height,none,OK,pass,[0.1..0.85],0.999912,7968.000
 normalize_hw,bfloat8_b,tile,l1,none,OK,pass,[0.1..0.85],0.999931,1864.000
-normalize_hw,bfloat8_b,tile,width,none,FAIL,TT_FATAL @ /work/ttnn/cpp/ttnn/operations/data_movement/bcast/device/bcast_device_operation.cpp:125: input_tensor_a.memory_config().memory_layout() == TensorMemoryLayout::INTERLEAVED || input_tensor_a.memory_config().memory_layout() == TensorMemoryLayout::HEIGHT_SHARDED | info: | HW bcast in0 supports Height Sharding or Interleaving,[0.1..0.85],,
-normalize_hw,float32,rm,block,none,FAIL,TT_FATAL @ /work/ttnn/cpp/ttnn/operations/data_movement/bcast/device/bcast_device_operation.cpp:125: input_tensor_a.memory_config().memory_layout() == TensorMemoryLayout::INTERLEAVED || input_tensor_a.memory_config().memory_layout() == TensorMemoryLayout::HEIGHT_SHARDED | info: | HW bcast in0 supports Height Sharding or Interleaving,[0.1..0.85],,
-normalize_hw,float32,rm,dram,none,OK,pass,[0.1..0.85],0.999991,15335419.000
-normalize_hw,float32,rm,height,none,OK,pass,[0.1..0.85],0.999991,14770967.000
-normalize_hw,float32,rm,l1,none,OK,pass,[0.1..0.85],0.999991,14970764.000
-normalize_hw,float32,rm,width,none,FAIL,TT_FATAL @ /work/ttnn/cpp/ttnn/operations/data_movement/bcast/device/bcast_device_operation.cpp:125: input_tensor_a.memory_config().memory_layout() == TensorMemoryLayout::INTERLEAVED || input_tensor_a.memory_config().memory_layout() == TensorMemoryLayout::HEIGHT_SHARDED | info: | HW bcast in0 supports Height Sharding or Interleaving,[0.1..0.85],,
-normalize_hw,float32,tile,block,none,FAIL,TT_FATAL @ /work/ttnn/cpp/ttnn/operations/data_movement/bcast/device/bcast_device_operation.cpp:125: input_tensor_a.memory_config().memory_layout() == TensorMemoryLayout::INTERLEAVED || input_tensor_a.memory_config().memory_layout() == TensorMemoryLayout::HEIGHT_SHARDED | info: | HW bcast in0 supports Height Sharding or Interleaving,[0.1..0.85],,
-normalize_hw,float32,tile,dram,none,OK,pass,[0.1..0.85],0.999991,25466106.000
-normalize_hw,float32,tile,height,none,OK,pass,[0.1..0.85],0.999992,25067578.000
-normalize_hw,float32,tile,l1,none,OK,pass,[0.1..0.85],0.999990,9457572.000
-normalize_hw,float32,tile,width,none,FAIL,TT_FATAL @ /work/ttnn/cpp/ttnn/operations/data_movement/bcast/device/bcast_device_operation.cpp:125: input_tensor_a.memory_config().memory_layout() == TensorMemoryLayout::INTERLEAVED || input_tensor_a.memory_config().memory_layout() == TensorMemoryLayout::HEIGHT_SHARDED | info: | HW bcast in0 supports Height Sharding or Interleaving,[0.1..0.85],,
+normalize_hw,bfloat8_b,tile,width,none,OK,pass,[0.1..0.85],0.999908,1808.000
+normalize_hw,float32,rm,block,none,OK,pass,[0.1..0.85],1.000000,4790.000
+normalize_hw,float32,rm,dram,none,OK,pass,[0.1..0.85],1.000000,1.000
+normalize_hw,float32,rm,height,none,OK,pass,[0.1..0.85],1.000000,1221915.000
+normalize_hw,float32,rm,l1,none,OK,pass,[0.1..0.85],1.000000,1.000
+normalize_hw,float32,rm,width,none,OK,pass,[0.1..0.85],1.000000,4727.000
+normalize_hw,float32,tile,block,none,OK,pass,[0.1..0.85],1.000000,1170.000
+normalize_hw,float32,tile,dram,none,OK,pass,[0.1..0.85],1.000000,1.000
+normalize_hw,float32,tile,height,none,OK,pass,[0.1..0.85],1.000000,1.000
+normalize_hw,float32,tile,l1,none,OK,pass,[0.1..0.85],1.000000,1.000
+normalize_hw,float32,tile,width,none,OK,pass,[0.1..0.85],1.000000,1202.000
 normalize_hw,int32,rm,block,none,FAIL,TT_FATAL @ /work/ttnn/cpp/ttnn/operations/reduction/generic/generic_reductions.cpp:564: dt != DataType::INT32 && dt != DataType::UINT32 | info: | ttnn.mean does not support integer inputs - got DataType::INT32.,[1..49],,
 normalize_hw,int32,rm,dram,none,FAIL,TT_FATAL @ /work/ttnn/cpp/ttnn/operations/reduction/generic/generic_reductions.cpp:564: dt != DataType::INT32 && dt != DataType::UINT32 | info: | ttnn.mean does not support integer inputs - got DataType::INT32.,[1..49],,
 normalize_hw,int32,rm,height,none,FAIL,TT_FATAL @ /work/ttnn/cpp/ttnn/operations/reduction/generic/generic_reductions.cpp:564: dt != DataType::INT32 && dt != DataType::UINT32 | info: | ttnn.mean does not support integer inputs - got DataType::INT32.,[1..49],,
