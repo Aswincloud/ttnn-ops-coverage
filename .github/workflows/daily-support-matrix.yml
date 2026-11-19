@@ -13,19 +13,21 @@ name: Daily eltwise support matrix (tt-metal)
 # secret (Aswinmcw's classic PAT, repo+workflow scopes).
 
 on:
-  schedule:
-    # 20:00 UTC = 01:30 IST — staggered 30 min after the perf pipeline's 19:30
-    # UTC run so the two don't contend for the same shared viommu HW pool. Runs
-    # the prior UTC day, but the guard step dates the file in IST, so the
-    # dashboard shows the correct IST run day (not the previous UTC day).
-    - cron: "0 20 * * *"     # MAIN run.
-    - cron: "45 23 * * *"    # SAFETY-NET. ~3.75h after the main run, by which
-    # the tt-metal run (queue + ~3h exec) has finished. If the main run got
-    # cancelled/killed before ingesting (e.g. a hosted-runner SIGTERM mid-poll,
-    # while the tt-metal run itself succeeded), this pass detects the missing day
-    # and ingests the newest successful tt-metal run instead of re-dispatching.
-    # No-op (silent) when today's data already landed. Staggered 15 min after the
-    # perf safety-net (23:30) so the two don't contend for the API/HW pool.
+  # Daily schedule DISABLED 2026-11-19: not being used effectively. Manual
+  # runs still work via workflow_dispatch. Uncomment to re-enable.
+#  schedule:
+#    # 20:00 UTC = 01:30 IST — staggered 30 min after the perf pipeline's 19:30
+#    # UTC run so the two don't contend for the same shared viommu HW pool. Runs
+#    # the prior UTC day, but the guard step dates the file in IST, so the
+#    # dashboard shows the correct IST run day (not the previous UTC day).
+#    - cron: "0 20 * * *"     # MAIN run.
+#    - cron: "45 23 * * *"    # SAFETY-NET. ~3.75h after the main run, by which
+#    # the tt-metal run (queue + ~3h exec) has finished. If the main run got
+#    # cancelled/killed before ingesting (e.g. a hosted-runner SIGTERM mid-poll,
+#    # while the tt-metal run itself succeeded), this pass detects the missing day
+#    # and ingests the newest successful tt-metal run instead of re-dispatching.
+#    # No-op (silent) when today's data already landed. Staggered 15 min after the
+#    # perf safety-net (23:30) so the two don't contend for the API/HW pool.
   workflow_dispatch:
     inputs:
       mode:
